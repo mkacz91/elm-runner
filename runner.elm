@@ -1,6 +1,6 @@
 import Color exposing (darkBlue, white)
 import Graphics.Element exposing (Element, container, middle)
-import Graphics.Collage exposing (Form, collage, rect, filled, move)
+import Graphics.Collage exposing (Form, collage, rect, filled, move, rotate)
 import Keyboard exposing (KeyCode)
 import Set exposing (Set, member)
 import Signal exposing ((<~), (~), sampleOn, foldp)
@@ -15,6 +15,7 @@ canvasWidth = 600
 canvasHeight = 300
 clearColor = darkBlue
 runnerColor = white
+yGround = -20
 
 runnerSize = 20
 jumpHeight = 60
@@ -74,6 +75,7 @@ type alias Runner
     y            : Float,
     w            : Float,
     h            : Float,
+    angle        : Float,
     ySnapshot    : Float,
     dimSnapshot  : (Float, Float),
     snapshotTime : Float
@@ -86,6 +88,7 @@ initialRunner
     y            = 0,
     w            = runnerSize,
     h            = runnerSize,
+    angle        = 0,
     ySnapshot    = 0,
     dimSnapshot  = (runnerSize, runnerSize),
     snapshotTime = 0
@@ -113,10 +116,16 @@ jumpStep input runner =
   let
     dt = input.time - runner.snapshotTime
     y0 = runner.ySnapshot
-    d = jumpDuration
-    a = 4 * jumpHeight / (d * d)
+    jd = jumpDuration
+    h = jumpHeight
+    a = 4 * h / (jd * jd)
+    --sqrtDelta = 4 * sqrt(h * (h + y0)) / jd
+    --rd = (a * jd - sqrtDelta) / (2 * a)
   in
-    { runner | y <- y0 + a * dt * (d - dt) }
+    { runner |
+      y <- y0 + a * dt * (jd - dt),
+      angle <- -dt / jd * pi / 2
+    }
     |> dimTransition input dimTransitionDuration runnerSize runnerSize
 
 slideStep : Input -> Runner -> Runner
@@ -166,6 +175,7 @@ handleLanding input runner =
     { runner |
       state <- Running,
       y <- 0,
+      angle <- 0,
       ySnapshot <- 0,
       dimSnapshot <- (runnerSize, runnerSize),
       snapshotTime <- input.time
@@ -181,7 +191,8 @@ runnerForm : Runner -> Form
 runnerForm runner =
   rect runner.w runner.h
   |> filled runnerColor
-  |> move (0, runner.y)
+  |> rotate runner.angle
+  |> move (0, yGround + runner.y + runner.h / 2)
 
 display : (Int, Int) -> Model -> Element
 display (w, h) model =
