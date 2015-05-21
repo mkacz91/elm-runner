@@ -1,4 +1,4 @@
-all: index.html
+all: runner.js
 
-index.html: runner.elm
-	elm-make runner.elm --output=index.html
+runner.js: runner.elm
+	elm-make runner.elm --output=runner.js
