@@ -14,7 +14,7 @@ import Window
 --------------------------------------------------------------------------------
 
 canvasWidth = 600
-canvasHeight = 200
+canvasHeight = 120
 bg = darkBlue
 fg = white
 
@@ -27,6 +27,7 @@ speed = 200.0
 obstacleUnit = 30.0
 minObstacleDistance = 100.0
 obstacleMargin = 5
+pauseMargin = 1.0
 
 canvasLeft = -canvasWidth / 2 - runnerX
 canvasRight = canvasWidth / 2 - runnerX
@@ -58,20 +59,23 @@ last xs = case xs of
   [x] -> Just x
   _ :: xs' -> last xs'
 
+setIsEmpty : Set comparable -> Bool
+setIsEmpty xs = (Set.foldl (\_ s -> s + 1) 0 xs) == 0
+
 --------------------------------------------------------------------------------
 -- Input                                                                      --
 --------------------------------------------------------------------------------
 
 -- Keyboard input
 
-type Key = Jump | Slide | None
+type Key = Jump | Slide | Some | None
 
 resolveKeys : Set KeyCode -> Key
 resolveKeys keysDown =
   case (member 38 keysDown, member 40 keysDown) of
     (True, False) -> Jump
     (False, True) -> Slide
-    _             -> None
+    _             -> if setIsEmpty keysDown then None else Some
 
 key : Signal Key
 key = Signal.map resolveKeys Keyboard.keysDown
@@ -278,25 +282,48 @@ trackStep input track =
 -- Model                                                                      --
 --------------------------------------------------------------------------------
 
+type GameState = Paused Float | Playing
+
 type alias Model
   = {
+    state : GameState,
     runner : Runner,
-    track : Track
+    track : Track,
+    score : Int
   }
 
 initialModel
   = {
+    state = Paused 0,
     runner = initialRunner,
-    track = initialTrack
+    track = initialTrack,
+    score = 0
   }
 
 step : Input -> Model -> Model
-step input model
+step input model =
+  case model.state of
+    Paused at -> pausedStep input at model
+    Playing -> playingStep input model
+
+pausedStep : Input -> Float -> Model -> Model
+pausedStep input pauseTime model =
+  if input.key == None || input.time < pauseTime + pauseMargin then model
+  else let track = model.track in
+    { model |
+      state <- Playing,
+      track <- { track | obstacles <- [] },
+      score <- 0
+    }
+
+playingStep : Input -> Model -> Model
+playingStep input model
   = { model |
     runner <- runnerStep input model.runner,
-    track <- trackStep input model.track
+    track <- trackStep input model.track,
+    score <- floor (input.time * 10)
   }
-  |> collisions
+  |> collisions input
 
 collides : Runner -> Obstacle -> Bool
 collides runner obstacle =
@@ -311,14 +338,10 @@ collides runner obstacle =
     Spikes -> y < spikeH - obstacleMargin && y < -sqrt3 * x0 && y < sqrt3 * x1
     Hole -> x0 < 0 && 0 < x1 && h > runnerSize / 2
 
-collisions : Model -> Model
-collisions model =
-  let track = model.track in
+collisions : Input -> Model -> Model
+collisions input model =
   if any (collides model.runner) model.track.obstacles then
-    {
-      runner = model.runner,
-      track = { track | obstacles <- [] }
-    }
+    { model | state <- Paused input.time }
   else
     model
 
@@ -359,13 +382,22 @@ obstacleForm obstacle = case obstacle.kind of
 trackForm : Track -> Form
 trackForm track = group (List.map obstacleForm track.obstacles)
 
+pausedForm : Model -> Form
+pausedForm mode = rect 10 10 |> filled fg
+
+playingForm : Model -> Form
+playingForm model =
+  group [runnerForm model.runner, trackForm model.track]
+  |> move (runnerX, -canvasHeight / 2)
+
 display : (Int, Int) -> Model -> Element
 display (w, h) model =
   container w h middle (
     collage canvasWidth canvasHeight [
       rect canvasWidth canvasHeight |> filled bg,
-      group [runnerForm model.runner, trackForm model.track]
-      |> move (runnerX, -canvasHeight / 2)
+      case model.state of
+        Paused _ -> pausedForm model
+        Playing -> playingForm model
     ]
   )
 
