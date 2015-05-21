@@ -2,7 +2,7 @@ import Color exposing (darkBlue, white)
 import Graphics.Element exposing (Element, container, middle)
 import Graphics.Collage exposing (Form, collage, rect, ngon, filled, move, rotate, group)
 import Keyboard exposing (KeyCode)
-import List
+import List exposing (any)
 import Random exposing (Generator, Seed, customGenerator, generate, initialSeed)
 import Set exposing (Set, member)
 import Signal exposing ((<~), (~), sampleOn, foldp)
@@ -26,9 +26,12 @@ dimTransitionDuration = 0.1
 speed = 200.0
 obstacleUnit = 30.0
 minObstacleDistance = 100.0
+obstacleMargin = 5
 
 canvasLeft = -canvasWidth / 2 - runnerX
 canvasRight = canvasWidth / 2 - runnerX
+sqrt3 = sqrt(3)
+spikeH = sqrt3 / 2 * obstacleUnit
 
 port randomSeed : Int
 
@@ -138,15 +141,24 @@ jumpStep : Input -> Runner -> Runner
 jumpStep input runner =
   let
     dt = input.time - runner.snapshotTime
-    jd = jumpDuration
+    d = jumpDuration
     h = jumpHeight
-    a = 4 * h / (jd * jd)
+    a = 4 * h / (d * d)
   in
-    { runner |
-      y <- a * dt * (jd - dt),
-      angle <- -dt / jd * pi / 2
-    }
-    |> dimTransition input dimTransitionDuration runnerSize runnerSize
+    if d <= dt then
+      { runner |
+        state <- Running,
+        y <- 0,
+        angle <- 0,
+        dimSnapshot <- (runnerSize, runnerSize),
+        snapshotTime <- input.time
+      }
+    else
+      { runner |
+        y <- a * dt * (d - dt),
+        angle <- -dt / d * pi / 2
+      }
+      |> dimTransition input dimTransitionDuration runnerSize runnerSize
 
 slideStep : Input -> Runner -> Runner
 slideStep input =
@@ -281,22 +293,34 @@ initialModel
 step : Input -> Model -> Model
 step input model
   = { model |
-    runner <- runnerStep input model.runner |> handleLanding input,
+    runner <- runnerStep input model.runner,
     track <- trackStep input model.track
   }
+  |> collisions
 
-handleLanding : Input -> Runner -> Runner
-handleLanding input runner =
-  if runner.state == Jumping && runner.y < 0 then
-    { runner |
-      state <- Running,
-      y <- 0,
-      angle <- 0,
-      dimSnapshot <- (runnerSize, runnerSize),
-      snapshotTime <- input.time
+collides : Runner -> Obstacle -> Bool
+collides runner obstacle =
+  let
+    x0 = obstacle.x - runner.w / 2 + obstacleMargin
+    x1 = obstacle.x + toFloat(obstacle.units) * obstacleUnit
+       + runner.w / 2 - obstacleMargin
+    x = 0
+    y = runner.y
+    h = runner.h
+  in case obstacle.kind of
+    Spikes -> y < spikeH - obstacleMargin && y < -sqrt3 * x0 && y < sqrt3 * x1
+    Hole -> x0 < 0 && 0 < x1 && h > runnerSize / 2
+
+collisions : Model -> Model
+collisions model =
+  let track = model.track in
+  if any (collides model.runner) model.track.obstacles then
+    {
+      runner = model.runner,
+      track = { track | obstacles <- [] }
     }
   else
-    runner
+    model
 
 --------------------------------------------------------------------------------
 -- Display                                                                    --
@@ -313,7 +337,7 @@ obstacleForm : Obstacle -> Form
 obstacleForm obstacle = case obstacle.kind of
   Spikes ->
     let
-      radius = sqrt(3) / 3 * obstacleUnit
+      radius = 2 * spikeH / 3
       spikeForm i =
         ngon 3 radius
         |> filled fg
@@ -322,7 +346,7 @@ obstacleForm obstacle = case obstacle.kind of
     in
       iter obstacle.units spikeForm
       |> group
-      |> move (obstacle.x + obstacleUnit / 2, radius / 2)
+      |> move (obstacle.x + obstacleUnit / 2, spikeH / 3)
   Hole ->
     let
       w = toFloat(obstacle.units) * obstacleUnit
