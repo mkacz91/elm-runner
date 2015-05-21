@@ -1,7 +1,9 @@
 import Color exposing (darkBlue, white)
 import Graphics.Element exposing (Element, container, middle)
-import Graphics.Collage exposing (Form, collage, rect, filled, move, rotate)
+import Graphics.Collage exposing (Form, collage, rect, ngon, filled, move, rotate, group)
 import Keyboard exposing (KeyCode)
+import List
+import Random exposing (Generator, Seed, customGenerator, generate, initialSeed)
 import Set exposing (Set, member)
 import Signal exposing ((<~), (~), sampleOn, foldp)
 import Time exposing (Time, fps, inSeconds)
@@ -12,15 +14,23 @@ import Window
 --------------------------------------------------------------------------------
 
 canvasWidth = 600
-canvasHeight = 300
-clearColor = darkBlue
-runnerColor = white
-yGround = -20
+canvasHeight = 200
+bg = darkBlue
+fg = white
 
-runnerSize = 20
-jumpHeight = 60
-jumpDuration = 1
+runnerSize = 20.0
+runnerX = -100.0
+jumpHeight = 50.0
+jumpDuration = 0.6
 dimTransitionDuration = 0.1
+speed = 200.0
+obstacleUnit = 30.0
+minObstacleDistance = 100.0
+
+canvasLeft = -canvasWidth / 2 - runnerX
+canvasRight = canvasWidth / 2 - runnerX
+
+port randomSeed : Int
 
 --------------------------------------------------------------------------------
 -- Utils                                                                      --
@@ -28,6 +38,22 @@ dimTransitionDuration = 0.1
 
 lerp : Float -> Float -> Float -> Float
 lerp x y alpha = (1 - alpha) * x + alpha * y
+
+iter : Int -> (Int -> a) -> List a
+iter n f =
+  let aux n xs = if n < 1 then xs else aux (n - 1) (f (n - 1) :: xs)
+  in aux n []
+
+dropWhile : (a -> Bool) -> List a -> List a
+dropWhile f xs = case xs of
+  x :: xs' -> if f x then dropWhile f xs' else xs
+  [] -> []
+
+last : List a -> Maybe a
+last xs = case xs of
+  [] -> Nothing
+  [x] -> Just x
+  _ :: xs' -> last xs'
 
 --------------------------------------------------------------------------------
 -- Input                                                                      --
@@ -50,7 +76,7 @@ key = Signal.map resolveKeys Keyboard.keysDown
 -- Time input
 
 time : Signal Float
-time = foldp (+) 0 (inSeconds <~ fps 30)
+time = foldp (+) 0 (inSeconds <~ fps 60)
 
 -- Merged input
 
@@ -71,26 +97,24 @@ type RunnerState = Running | Jumping | Sliding
 
 type alias Runner
   = {
-    state        : RunnerState,
-    y            : Float,
-    w            : Float,
-    h            : Float,
-    angle        : Float,
-    ySnapshot    : Float,
-    dimSnapshot  : (Float, Float),
+    state : RunnerState,
+    y : Float,
+    w : Float,
+    h : Float,
+    angle : Float,
+    dimSnapshot : (Float, Float),
     snapshotTime : Float
   }
 
 initialRunner : Runner
 initialRunner
   = {
-    state        = Running,
-    y            = 0,
-    w            = runnerSize,
-    h            = runnerSize,
-    angle        = 0,
-    ySnapshot    = 0,
-    dimSnapshot  = (runnerSize, runnerSize),
+    state = Running,
+    y = 0,
+    w = runnerSize,
+    h = runnerSize,
+    angle = 0,
+    dimSnapshot = (runnerSize, runnerSize),
     snapshotTime = 0
   }
 
@@ -99,7 +123,6 @@ runnerStep input runner =
   let setState state
     = { runner |
       state <- state,
-      ySnapshot <- runner.y,
       dimSnapshot <- (runner.w, runner.h),
       snapshotTime <- input.time
     }
@@ -115,15 +138,12 @@ jumpStep : Input -> Runner -> Runner
 jumpStep input runner =
   let
     dt = input.time - runner.snapshotTime
-    y0 = runner.ySnapshot
     jd = jumpDuration
     h = jumpHeight
     a = 4 * h / (jd * jd)
-    --sqrtDelta = 4 * sqrt(h * (h + y0)) / jd
-    --rd = (a * jd - sqrtDelta) / (2 * a)
   in
     { runner |
-      y <- y0 + a * dt * (jd - dt),
+      y <- a * dt * (jd - dt),
       angle <- -dt / jd * pi / 2
     }
     |> dimTransition input dimTransitionDuration runnerSize runnerSize
@@ -150,23 +170,119 @@ dimTransition input duration w h runner =
 
 
 --------------------------------------------------------------------------------
+-- Track                                                                      --
+--------------------------------------------------------------------------------
+
+type ObstacleKind = Spikes | Hole
+
+type alias Obstacle
+  = {
+    kind : ObstacleKind,
+    spawnTime : Float,
+    x : Float,
+    units : Int
+  }
+
+type alias Track
+  = {
+    obstacles : List Obstacle,
+    seed : Seed
+  }
+
+initialTrack : Track
+initialTrack
+  = {
+    obstacles = [],
+    seed = initialSeed randomSeed
+  }
+
+obstacleKindGenerator : Generator ObstacleKind
+obstacleKindGenerator =
+  let
+    auxGenerator = Random.int 0 1
+    aux seed = case generate (Random.int 0 1) seed of
+      (0, seed') -> (Spikes, seed')
+      (1, seed') -> (Hole, seed')
+  in
+    customGenerator aux
+
+advanceObstacles : Input -> Track -> Track
+advanceObstacles input track =
+  let
+    x0 = canvasRight
+    aux obstacle =
+      { obstacle | x <- x0 - (input.time - obstacle.spawnTime) * speed }
+  in
+    { track | obstacles <- List.map aux track.obstacles }
+
+dropInvisibleObstacles : Track -> Track
+dropInvisibleObstacles track =
+  let aux obstacle =
+    obstacle.x + toFloat(obstacle.units) * obstacleUnit <= canvasLeft
+  in
+    { track | obstacles <- dropWhile aux track.obstacles }
+
+maybeSpawnObstacle : Input -> Track -> Track
+maybeSpawnObstacle input track =
+  let
+    x0 = canvasRight
+    xMax = case last track.obstacles of
+      Just obstacle -> obstacle.x + (toFloat obstacle.units) * obstacleUnit
+      Nothing -> 0
+  in
+    if x0 - xMax >= minObstacleDistance then
+      let
+        t = input.time
+        spawnTimeGenerator = Random.float t (t + minObstacleDistance / speed)
+        (kind, seed1) = generate obstacleKindGenerator track.seed
+        (spawnTime, seed2) = generate spawnTimeGenerator seed1
+        (units, seed3) = case kind of
+          Spikes -> generate (Random.int 1 3) seed2
+          Hole -> generate (Random.int 1 8) seed2
+        obstacle
+          = {
+            kind = kind,
+            spawnTime = t,
+            x = x0,
+            units = units
+          }
+      in
+        { track |
+          obstacles <- track.obstacles ++ [obstacle],
+          seed <- seed3
+        }
+    else
+      track
+
+
+trackStep : Input -> Track -> Track
+trackStep input track =
+  track
+  |> advanceObstacles input
+  |> dropInvisibleObstacles
+  |> maybeSpawnObstacle input
+
+--------------------------------------------------------------------------------
 -- Model                                                                      --
 --------------------------------------------------------------------------------
 
 type alias Model
   = {
-    runner : Runner
+    runner : Runner,
+    track : Track
   }
 
 initialModel
   = {
-    runner = initialRunner
+    runner = initialRunner,
+    track = initialTrack
   }
 
 step : Input -> Model -> Model
 step input model
   = { model |
-    runner <- runnerStep input model.runner |> handleLanding input
+    runner <- runnerStep input model.runner |> handleLanding input,
+    track <- trackStep input model.track
   }
 
 handleLanding : Input -> Runner -> Runner
@@ -176,7 +292,6 @@ handleLanding input runner =
       state <- Running,
       y <- 0,
       angle <- 0,
-      ySnapshot <- 0,
       dimSnapshot <- (runnerSize, runnerSize),
       snapshotTime <- input.time
     }
@@ -190,16 +305,43 @@ handleLanding input runner =
 runnerForm : Runner -> Form
 runnerForm runner =
   rect runner.w runner.h
-  |> filled runnerColor
+  |> filled fg
   |> rotate runner.angle
-  |> move (0, yGround + runner.y + runner.h / 2)
+  |> move (0, runner.y + runner.h / 2)
+
+obstacleForm : Obstacle -> Form
+obstacleForm obstacle = case obstacle.kind of
+  Spikes ->
+    let
+      radius = sqrt(3) / 3 * obstacleUnit
+      spikeForm i =
+        ngon 3 radius
+        |> filled fg
+        |> rotate (pi / 2)
+        |> move (toFloat(i) * obstacleUnit, 0)
+    in
+      iter obstacle.units spikeForm
+      |> group
+      |> move (obstacle.x + obstacleUnit / 2, radius / 2)
+  Hole ->
+    let
+      w = toFloat(obstacle.units) * obstacleUnit
+      h = canvasHeight - runnerSize / 2
+    in
+      rect w h
+      |> filled fg
+      |> move (obstacle.x + w / 2, h / 2 + runnerSize / 2)
+
+trackForm : Track -> Form
+trackForm track = group (List.map obstacleForm track.obstacles)
 
 display : (Int, Int) -> Model -> Element
 display (w, h) model =
   container w h middle (
     collage canvasWidth canvasHeight [
-      rect canvasWidth canvasHeight |> filled clearColor,
-      runnerForm model.runner
+      rect canvasWidth canvasHeight |> filled bg,
+      group [runnerForm model.runner, trackForm model.track]
+      |> move (runnerX, -canvasHeight / 2)
     ]
   )
 
