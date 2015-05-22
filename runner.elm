@@ -1,11 +1,12 @@
 import Color exposing (darkBlue, white)
-import Graphics.Element exposing (Element, container, middle)
-import Graphics.Collage exposing (Form, collage, rect, ngon, filled, move, rotate, group)
+import Graphics.Element exposing (Element, container, middle, centered, leftAligned, above)
+import Graphics.Collage exposing (Form, collage, rect, ngon, filled, move, rotate, group, toForm)
 import Keyboard exposing (KeyCode)
 import List exposing (any)
 import Random exposing (Generator, Seed, customGenerator, generate, initialSeed)
 import Set exposing (Set, member)
-import Signal exposing ((<~), (~), sampleOn, foldp)
+import Signal exposing ((<~), (~), foldp)
+import Text
 import Time exposing (Time, fps, inSeconds)
 import Window
 
@@ -25,9 +26,11 @@ jumpDuration = 0.6
 dimTransitionDuration = 0.1
 speed = 200.0
 obstacleUnit = 30.0
-minObstacleDistance = 100.0
+minObstacleDistance = 70.0
 obstacleMargin = 5
 pauseMargin = 1.0
+maxSpikeUnits = 3
+maxHoleUnits = 5
 
 canvasLeft = -canvasWidth / 2 - runnerX
 canvasRight = canvasWidth / 2 - runnerX
@@ -214,13 +217,11 @@ initialTrack
 
 obstacleKindGenerator : Generator ObstacleKind
 obstacleKindGenerator =
-  let
-    auxGenerator = Random.int 0 1
-    aux seed = case generate (Random.int 0 1) seed of
-      (0, seed') -> (Spikes, seed')
-      (1, seed') -> (Hole, seed')
-  in
-    customGenerator aux
+  let aux seed =
+    case generate (Random.int 0 3) seed of
+      (0, seed') -> (Hole, seed')
+      (_, seed') -> (Spikes, seed')
+  in customGenerator aux
 
 advanceObstacles : Input -> Track -> Track
 advanceObstacles input track =
@@ -253,12 +254,12 @@ maybeSpawnObstacle input track =
         (kind, seed1) = generate obstacleKindGenerator track.seed
         (spawnTime, seed2) = generate spawnTimeGenerator seed1
         (units, seed3) = case kind of
-          Spikes -> generate (Random.int 1 3) seed2
-          Hole -> generate (Random.int 1 8) seed2
+          Spikes -> generate (Random.int 1 maxSpikeUnits) seed2
+          Hole -> generate (Random.int 1 maxHoleUnits) seed2
         obstacle
           = {
             kind = kind,
-            spawnTime = t,
+            spawnTime = spawnTime,
             x = x0,
             units = units
           }
@@ -282,37 +283,40 @@ trackStep input track =
 -- Model                                                                      --
 --------------------------------------------------------------------------------
 
-type GameState = Paused Float | Playing
+type GameState = Paused | Playing
 
 type alias Model
   = {
     state : GameState,
     runner : Runner,
     track : Track,
+    startTime : Float,
     score : Int
   }
 
 initialModel
   = {
-    state = Paused 0,
+    state = Paused,
     runner = initialRunner,
     track = initialTrack,
+    startTime = 0,
     score = 0
   }
 
 step : Input -> Model -> Model
 step input model =
   case model.state of
-    Paused at -> pausedStep input at model
+    Paused -> pausedStep input model
     Playing -> playingStep input model
 
-pausedStep : Input -> Float -> Model -> Model
-pausedStep input pauseTime model =
-  if input.key == None || input.time < pauseTime + pauseMargin then model
+pausedStep : Input -> Model -> Model
+pausedStep input model =
+  if input.key == None || input.time < model.startTime + pauseMargin then model
   else let track = model.track in
     { model |
       state <- Playing,
       track <- { track | obstacles <- [] },
+      startTime <- input.time,
       score <- 0
     }
 
@@ -321,7 +325,7 @@ playingStep input model
   = { model |
     runner <- runnerStep input model.runner,
     track <- trackStep input model.track,
-    score <- floor (input.time * 10)
+    score <- floor ((input.time - model.startTime) * 10)
   }
   |> collisions input
 
@@ -341,7 +345,9 @@ collides runner obstacle =
 collisions : Input -> Model -> Model
 collisions input model =
   if any (collides model.runner) model.track.obstacles then
-    { model | state <- Paused input.time }
+    { model |
+      state <- Paused,
+      startTime <- input.time }
   else
     model
 
@@ -383,20 +389,47 @@ trackForm : Track -> Form
 trackForm track = group (List.map obstacleForm track.obstacles)
 
 pausedForm : Model -> Form
-pausedForm mode = rect 10 10 |> filled fg
+pausedForm model =
+  group [
+    Text.fromString "Elm Runner"
+    |> Text.color fg
+    |> Text.height 40
+    |> Text.monospace
+    |> centered
+    |> toForm
+    |> move (0, 20),
+    Text.fromString "UP to jump, DOWN to crouch\nAny key to start"
+    |> Text.color fg
+    |> Text.height 12
+    |> Text.monospace
+    |> centered
+    |> toForm
+    |> move (0, -20)
+  ]
 
 playingForm : Model -> Form
 playingForm model =
   group [runnerForm model.runner, trackForm model.track]
   |> move (runnerX, -canvasHeight / 2)
 
+scoreElement : Model -> Element
+scoreElement model =
+  Text.fromString ("Score: " ++ toString model.score)
+  |> Text.color bg
+  |> Text.height 12
+  |> Text.monospace
+  |> leftAligned
+  |> Graphics.Element.color fg
+
 display : (Int, Int) -> Model -> Element
 display (w, h) model =
   container w h middle (
+    scoreElement model
+    `above`
     collage canvasWidth canvasHeight [
       rect canvasWidth canvasHeight |> filled bg,
       case model.state of
-        Paused _ -> pausedForm model
+        Paused -> pausedForm model
         Playing -> playingForm model
     ]
   )
