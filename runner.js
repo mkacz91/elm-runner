@@ -3131,23 +3131,23 @@ Elm.Main.make = function (_elm) {
    $Random = Elm.Random.make(_elm),
    $Set = Elm.Set.make(_elm),
    $Signal = Elm.Signal.make(_elm),
+   $Text = Elm.Text.make(_elm),
    $Time = Elm.Time.make(_elm),
    $Window = Elm.Window.make(_elm);
-   var Model = F4(function (a,
+   var Model = F5(function (a,
    b,
    c,
-   d) {
+   d,
+   e) {
       return {_: {}
              ,runner: b
-             ,score: d
+             ,score: e
+             ,startTime: d
              ,state: a
              ,track: c};
    });
    var Playing = {ctor: "Playing"};
-   var Paused = function (a) {
-      return {ctor: "Paused"
-             ,_0: a};
-   };
+   var Paused = {ctor: "Paused"};
    var Track = F2(function (a,b) {
       return {_: {}
              ,obstacles: a
@@ -3169,24 +3169,20 @@ Elm.Main.make = function (_elm) {
       var aux = function (seed) {
          return function () {
             var _v0 = A2($Random.generate,
-            A2($Random.$int,0,1),
+            A2($Random.$int,0,3),
             seed);
             switch (_v0.ctor)
             {case "_Tuple2": switch (_v0._0)
                  {case 0: return {ctor: "_Tuple2"
-                                 ,_0: Spikes
-                                 ,_1: _v0._1};
-                    case 1: return {ctor: "_Tuple2"
-                                   ,_0: Hole
-                                   ,_1: _v0._1};}
-                 break;}
+                                 ,_0: Hole
+                                 ,_1: _v0._1};}
+                 return {ctor: "_Tuple2"
+                        ,_0: Spikes
+                        ,_1: _v0._1};}
             _U.badCase($moduleName,
-            "between lines 219 and 222");
+            "between lines 265 and 268");
          }();
       };
-      var auxGenerator = A2($Random.$int,
-      0,
-      1);
       return $Random.customGenerator(aux);
    }();
    var Runner = F7(function (a,
@@ -3271,7 +3267,7 @@ Elm.Main.make = function (_elm) {
             case "[]":
             return $Maybe.Nothing;}
          _U.badCase($moduleName,
-         "between lines 57 and 60");
+         "between lines 74 and 79");
       }();
    };
    var dropWhile = F2(function (f,
@@ -3285,7 +3281,7 @@ Elm.Main.make = function (_elm) {
             case "[]":
             return _L.fromArray([]);}
          _U.badCase($moduleName,
-         "between lines 52 and 54");
+         "between lines 68 and 72");
       }();
    });
    var iter = F2(function (n,f) {
@@ -3338,13 +3334,14 @@ Elm.Main.make = function (_elm) {
                       ,obstacles: _L.fromArray([])
                       ,seed: $Random.initialSeed(randomSeed)};
    var sqrt3 = $Basics.sqrt(3);
+   var maxHoleUnits = 5;
+   var maxSpikeUnits = 3;
    var pauseMargin = 1.0;
-   var pausedStep = F3(function (input,
-   pauseTime,
+   var pausedStep = F2(function (input,
    model) {
       return _U.eq(input.key,
       None) || _U.cmp(input.time,
-      pauseTime + pauseMargin) < 0 ? model : function () {
+      model.startTime + pauseMargin) < 0 ? model : function () {
          var track = model.track;
          return _U.replace([["state"
                             ,Playing]
@@ -3352,12 +3349,13 @@ Elm.Main.make = function (_elm) {
                             ,_U.replace([["obstacles"
                                          ,_L.fromArray([])]],
                             track)]
+                           ,["startTime",input.time]
                            ,["score",0]],
          model);
       }();
    });
    var obstacleMargin = 5;
-   var minObstacleDistance = 100.0;
+   var minObstacleDistance = 70.0;
    var obstacleUnit = 30.0;
    var spikeH = sqrt3 / 2 * obstacleUnit;
    var speed = 200.0;
@@ -3379,7 +3377,8 @@ Elm.Main.make = function (_elm) {
    var initialModel = {_: {}
                       ,runner: initialRunner
                       ,score: 0
-                      ,state: Paused(0)
+                      ,startTime: 0
+                      ,state: Paused
                       ,track: initialTrack};
    var jumpStep = F2(function (input,
    runner) {
@@ -3473,7 +3472,7 @@ Elm.Main.make = function (_elm) {
                  (0 - sqrt3) * x0) < 0 && _U.cmp(y,
                  sqrt3 * x1) < 0);}
             _U.badCase($moduleName,
-            "between lines 337 and 339");
+            "between lines 399 and 404");
          }();
       }();
    });
@@ -3482,7 +3481,8 @@ Elm.Main.make = function (_elm) {
       return A2($List.any,
       collides(model.runner),
       model.track.obstacles) ? _U.replace([["state"
-                                           ,Paused(input.time)]],
+                                           ,Paused]
+                                          ,["startTime",input.time]],
       model) : model;
    });
    var fg = $Color.white;
@@ -3493,12 +3493,20 @@ Elm.Main.make = function (_elm) {
       runner.w,
       runner.h))));
    };
-   var pausedForm = function (mode) {
-      return $Graphics$Collage.filled(fg)(A2($Graphics$Collage.rect,
-      10,
-      10));
+   var pausedForm = function (model) {
+      return $Graphics$Collage.group(_L.fromArray([$Graphics$Collage.move({ctor: "_Tuple2"
+                                                                          ,_0: 0
+                                                                          ,_1: 20})($Graphics$Collage.toForm($Graphics$Element.centered($Text.monospace($Text.height(40)($Text.color(fg)($Text.fromString("Elm Runner")))))))
+                                                  ,$Graphics$Collage.move({ctor: "_Tuple2"
+                                                                          ,_0: 0
+                                                                          ,_1: -20})($Graphics$Collage.toForm($Graphics$Element.centered($Text.monospace($Text.height(12)($Text.color(fg)($Text.fromString("UP to jump, DOWN to crouch\nAny key to start")))))))]));
    };
    var bg = $Color.darkBlue;
+   var scoreElement = function (model) {
+      return $Graphics$Element.color(fg)($Graphics$Element.leftAligned($Text.monospace($Text.height(12)($Text.color(bg)($Text.fromString(A2($Basics._op["++"],
+      "Score: ",
+      $Basics.toString(model.score))))))));
+   };
    var canvasHeight = 120;
    var obstacleForm = function (obstacle) {
       return function () {
@@ -3531,7 +3539,7 @@ Elm.Main.make = function (_elm) {
                  spikeForm)));
               }();}
          _U.badCase($moduleName,
-         "between lines 360 and 380");
+         "between lines 430 and 452");
       }();
    };
    var trackForm = function (track) {
@@ -3587,7 +3595,7 @@ Elm.Main.make = function (_elm) {
                return _v16._0.x + $Basics.toFloat(_v16._0.units) * obstacleUnit;
                case "Nothing": return 0;}
             _U.badCase($moduleName,
-            "between lines 245 and 248");
+            "between lines 294 and 297");
          }();
          var x0 = canvasRight;
          return _U.cmp(x0 - xMax,
@@ -3610,20 +3618,22 @@ Elm.Main.make = function (_elm) {
                switch (kind.ctor)
                {case "Hole":
                   return A2($Random.generate,
-                    A2($Random.$int,1,8),
+                    A2($Random.$int,1,maxHoleUnits),
                     seed2);
                   case "Spikes":
                   return A2($Random.generate,
-                    A2($Random.$int,1,3),
+                    A2($Random.$int,
+                    1,
+                    maxSpikeUnits),
                     seed2);}
                _U.badCase($moduleName,
-               "between lines 255 and 258");
+               "between lines 304 and 307");
             }(),
             units = $._0,
             seed3 = $._1;
             var obstacle = {_: {}
                            ,kind: kind
-                           ,spawnTime: t
+                           ,spawnTime: spawnTime
                            ,units: units
                            ,x: x0};
             return _U.replace([["obstacles"
@@ -3650,7 +3660,7 @@ Elm.Main.make = function (_elm) {
                                            input,
                                            model.track)]
                                           ,["score"
-                                           ,$Basics.floor(input.time * 10)]],
+                                           ,$Basics.floor((input.time - model.startTime) * 10)]],
       model));
    });
    var step = F2(function (input,
@@ -3659,27 +3669,28 @@ Elm.Main.make = function (_elm) {
          var _v19 = model.state;
          switch (_v19.ctor)
          {case "Paused":
-            return A3(pausedStep,
+            return A2(pausedStep,
               input,
-              _v19._0,
               model);
             case "Playing":
             return A2(playingStep,
               input,
               model);}
          _U.badCase($moduleName,
-         "between lines 305 and 307");
+         "between lines 363 and 367");
       }();
    });
-   var display = F2(function (_v21,
+   var display = F2(function (_v20,
    model) {
       return function () {
-         switch (_v21.ctor)
+         switch (_v20.ctor)
          {case "_Tuple2":
             return A4($Graphics$Element.container,
-              _v21._0,
-              _v21._1,
+              _v20._0,
+              _v20._1,
               $Graphics$Element.middle,
+              A2($Graphics$Element.above,
+              scoreElement(model),
               A3($Graphics$Collage.collage,
               canvasWidth,
               canvasHeight,
@@ -3687,17 +3698,17 @@ Elm.Main.make = function (_elm) {
                            canvasWidth,
                            canvasHeight))
                            ,function () {
-                              var _v25 = model.state;
-                              switch (_v25.ctor)
+                              var _v24 = model.state;
+                              switch (_v24.ctor)
                               {case "Paused":
                                  return pausedForm(model);
                                  case "Playing":
                                  return playingForm(model);}
                               _U.badCase($moduleName,
-                              "between lines 398 and 401");
-                           }()])));}
+                              "between lines 500 and 503");
+                           }()]))));}
          _U.badCase($moduleName,
-         "between lines 395 and 401");
+         "between lines 495 and 503");
       }();
    });
    var main = A2($Signal._op["~"],
@@ -3723,6 +3734,8 @@ Elm.Main.make = function (_elm) {
                       ,minObstacleDistance: minObstacleDistance
                       ,obstacleMargin: obstacleMargin
                       ,pauseMargin: pauseMargin
+                      ,maxSpikeUnits: maxSpikeUnits
+                      ,maxHoleUnits: maxHoleUnits
                       ,canvasLeft: canvasLeft
                       ,canvasRight: canvasRight
                       ,sqrt3: sqrt3
@@ -3775,6 +3788,7 @@ Elm.Main.make = function (_elm) {
                       ,trackForm: trackForm
                       ,pausedForm: pausedForm
                       ,playingForm: playingForm
+                      ,scoreElement: scoreElement
                       ,display: display
                       ,main: main};
    return _elm.Main.values;
