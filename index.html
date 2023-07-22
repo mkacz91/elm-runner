@@ -4,17 +4,29 @@
   <meta charse="UTF-8">
   <title>ElmRunner</title>
   <style>
-    html, head, body { padding: 0; margin: 0; background-color: white }
-    body { font-family: calibri, helvetica, arial, sans-serif; }
+    html, head, body {
+      padding: 0;
+      margin: 0;
+      background-color: white
+    }
+    html, body {
+      height: 100%
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      font-family: 'Courier New', Courier, monospace;
+    }
   </style>
   <script src="runner.js"></script>
 </head>
 <body>
+  <div id="myapp"></div>
   <script>
-    Elm.fullscreen(
-      Elm.Main,
-      { randomSeed: Math.floor((Math.random() - 0.5) * 4294967295) }
-    )
+    Elm.Main.init({
+      node: document.getElementById('myapp')
+    });
   </script>
 </body>
 </html>
