@@ -1,29 +1,32 @@
-import Color exposing (darkBlue, white)
-import Graphics.Element exposing (Element, container, middle, centered, leftAligned, above)
-import Graphics.Collage exposing (Form, collage, rect, ngon, filled, move, rotate, group, toForm)
-import Keyboard exposing (KeyCode)
+import Browser
+import Browser.Events
+import Json.Decode as Decode
 import List exposing (any)
-import Random exposing (Generator, Seed, customGenerator, generate, initialSeed)
-import Set exposing (Set, member)
-import Signal exposing ((<~), (~), foldp)
-import Text
-import Time exposing (Time, fps, inSeconds)
-import Window
+import Set exposing (Set)
+import Random exposing (Generator, Seed, generate, initialSeed)
+import Time
+import Time exposing (posixToMillis)
+import Svg
+import Svg exposing (Svg, svg)
+import Svg.Attributes
+import Html
+import Html exposing (Html)
+import Html.Attributes
 
 --------------------------------------------------------------------------------
 -- Configuration
 --
 -- This part contains configuration constants that determine the appearance,
--- behaviour, and, inconsequence, the difficulty.
+-- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
 canvasWidth = 600
 canvasHeight = 120
-bg = darkBlue
-fg = white
+bg = "rgb(32, 74, 135)"
+fg = "white"
 
 runnerSize = 20.0
-runnerX = -100.0
+runnerX = 200.0
 jumpHeight = 50.0
 jumpDuration = 0.6
 dimTransitionDuration = 0.1
@@ -37,14 +40,10 @@ maxHoleUnits = 5
 
 -- Computed constants
 
-canvasLeft = -canvasWidth / 2 - runnerX
-canvasRight = canvasWidth / 2 - runnerX
+canvasLeft = -runnerX
+canvasRight = canvasWidth - runnerX
 sqrt3 = sqrt(3)
 spikeH = sqrt3 / 2 * obstacleUnit
-
--- Ported constants
-
-port randomSeed : Int
 
 --------------------------------------------------------------------------------
 -- Utils
@@ -60,13 +59,13 @@ lerp x y alpha = (1 - alpha) * x + alpha * y
 from 0 to (n - 1). -}
 iter : Int -> (Int -> a) -> List a
 iter n f =
-  let aux n xs = if n < 1 then xs else aux (n - 1) (f (n - 1) :: xs)
+  let aux m xs = if m < 1 then xs else aux (m - 1) (f (m - 1) :: xs)
   in aux n []
 
 {-| Drops all initial elements of a list that fulfill a predicate. -}
 dropWhile : (a -> Bool) -> List a -> List a
 dropWhile f xs = case xs of
-  x :: xs' -> if f x then dropWhile f xs' else xs
+  x :: xs_ -> if f x then dropWhile f xs_ else xs
   [] -> []
 
 {-| Retrieve the last element of a list. -}
@@ -74,52 +73,93 @@ last : List a -> Maybe a
 last xs = case xs of
   [] -> Nothing
   [x] -> Just x
-  _ :: xs' -> last xs'
+  _ :: xs_ -> last xs_
 
-{-| Check whether a set is empty. -}
-setIsEmpty : Set comparable -> Bool
-setIsEmpty xs = (Set.foldl (\_ s -> s + 1) 0 xs) == 0
+{-| Utility function for producing a commandless tuple. -}
+cmdless : a -> (a, Cmd msg)
+cmdless x = (x, Cmd.none)
 
 --------------------------------------------------------------------------------
 -- Input
---
--- Keyboard and time signals
 --------------------------------------------------------------------------------
 
--- Keyboard input
+type Msg
+  = Tick Time.Posix
+  | Key Bool String
+  | Touch String
+  | SpawnObstacle Obstacle
 
-{-| Supported keys. -}
-type Key = Jump | Slide | Some | None
+applyTick : Time.Posix -> Model -> (Model, Cmd Msg)
+applyTick posix model =
+  let
+    oldInput = model.input
+    millis = posixToMillis posix
+    input =
+      { oldInput
+      | time = toFloat (millis - model.startMillis) / 1000
+      }
+  in
+    { model
+    | millis = millis
+    , input = input
+    }
+    |> step
 
-{-| Transform raw keyboard data into `Key`. -}
-resolveKeys : Set KeyCode -> Key
-resolveKeys keysDown =
-  case (member 38 keysDown, member 40 keysDown) of
-    (True, False) -> Jump
-    (False, True) -> Slide
-    _             -> if setIsEmpty keysDown then None else Some
+keyDecoder : Bool -> Decode.Decoder Msg
+keyDecoder state = Decode.map (Key state) (Decode.field "code" Decode.string)
 
-{-| Signal carrying the pressed `Key`. -}
-key : Signal Key
-key = Signal.map resolveKeys Keyboard.keysDown
+applyKey : Bool -> String -> Model -> (Model, Cmd Msg)
+applyKey state key model = cmdless <|
+  let
+    oldInput = model.input
+    keys =
+      if state
+      then Set.insert key oldInput.keys
+      else Set.remove key oldInput.keys
+    input =
+      { oldInput
+      | keys = keys
+      , jump = Set.member "Up" keys
+          || Set.member "ArrowUp" keys
+          || Set.member "RightTouch" keys
+      , slide = Set.member "Down" keys
+          || Set.member "ArrowDown" keys
+          || Set.member "LeftTouch" keys
+      }
+  in
+    { model | input = input }
 
--- Time input
+applyTouch : String -> Model -> (Model, Cmd Msg)
+applyTouch touch model0 =
+  let
+    (model1, cmd1) = applyKey (String.contains "L" touch) "LeftTouch" model0
+    (model2, cmd2) = applyKey (String.contains "R" touch) "RightTouch" model1
+  in
+    (model2, Cmd.batch [cmd1, cmd2])
 
-{-| Signal carrying the time elapsed since the start of application. Updated
-60 times per second. -}
-time : Signal Float
-time = foldp (+) 0 (inSeconds <~ fps 60)
-
--- Merged input
-
-type alias Input
-  = {
-    key : Key,
-    time : Float
+applySpawnObstacle : Obstacle -> Model -> (Model, Cmd Msg)
+applySpawnObstacle obstacle model = cmdless <|
+  let oldTrack = model.track in
+  { model
+  | track = { oldTrack | obstacles = oldTrack.obstacles ++ [obstacle] }
   }
 
-input : Signal Input
-input = Input <~ key ~ time
+setGameState : GameState -> Model -> Model
+setGameState state model =
+  let oldInput = model.input in
+    { model
+    | state = state
+    , startMillis = model.millis
+    , input = { oldInput | time = 0 }
+    }
+
+type alias Input =
+  { jump: Bool
+  , slide: Bool
+  , keys: Set String
+  , time: Float
+  }
+
 
 --------------------------------------------------------------------------------
 -- Runner
@@ -131,15 +171,14 @@ input = Input <~ key ~ time
 type RunnerState = Running | Jumping | Sliding
 
 {-| Runner model. -}
-type alias Runner
-  = {
-    state : RunnerState,
-    y : Float,
-    w : Float,
-    h : Float,
-    angle : Float,
-    dimSnapshot : (Float, Float),
-    snapshotTime : Float
+type alias Runner =
+  { state : RunnerState
+  , y : Float
+  , w : Float
+  , h : Float
+  , angle : Float
+  , dimSnapshot : (Float, Float)
+  , snapshotTime : Float
   }
 
 {-| Default runner model instance. -}
@@ -156,21 +195,28 @@ initialRunner
   }
 
 {-| Advance the runner a step forward according to received input. -}
-runnerStep : Input -> Runner -> Runner
-runnerStep input runner =
-  let setState state
-    = { runner |
-      state <- state,
-      dimSnapshot <- (runner.w, runner.h),
-      snapshotTime <- input.time
-    }
-  in if
-    | input.key == Jump && runner.state /= Jumping -> setState Jumping
-    | input.key == Slide && runner.state == Running -> setState Sliding
-    | input.key == None && runner.state == Sliding -> setState Running
-    | runner.state == Jumping -> jumpStep input runner
-    | runner.state == Sliding -> slideStep input runner
-    | otherwise -> runStep input runner
+runnerStep : Input -> Runner -> (Runner, Cmd Msg)
+runnerStep input runner = cmdless <|
+  let
+    setState state =
+      { runner
+      | state = state
+      , dimSnapshot = (runner.w, runner.h)
+      , snapshotTime = input.time
+      }
+  in
+    if input.jump && runner.state /= Jumping then
+      setState Jumping
+    else if input.slide && runner.state == Running then
+      setState Sliding
+    else if Set.isEmpty(input.keys) && runner.state == Sliding then
+      setState Running
+    else if runner.state == Jumping then
+      jumpStep input runner
+    else if runner.state == Sliding then
+      slideStep input runner
+    else
+      runStep input runner
 
 {-| A subroutine of `runnerStep`, called when no state transition has taken
 place and the runner is in `Jumping` state. -}
@@ -183,17 +229,17 @@ jumpStep input runner =
     a = 4 * h / (d * d)
   in
     if d <= dt then
-      { runner |
-        state <- Running,
-        y <- 0,
-        angle <- 0,
-        dimSnapshot <- (runnerSize, runnerSize),
-        snapshotTime <- input.time
+      { runner
+      |  state = Running
+      ,  y = 0
+      ,  angle = 0
+      ,  dimSnapshot = (runnerSize, runnerSize)
+      ,  snapshotTime = input.time
       }
     else
-      { runner |
-        y <- a * dt * (d - dt),
-        angle <- -dt / d * pi / 2
+      { runner
+      | y = a * dt * (d - dt)
+      , angle = dt / d * 90
       }
       |> dimTransition input dimTransitionDuration runnerSize runnerSize
 
@@ -217,11 +263,10 @@ dimTransition input duration w h runner =
     alpha = (min duration dt) / duration
     (w0, h0) = runner.dimSnapshot
   in
-    { runner |
-      w <- lerp w0 w alpha,
-      h <- lerp h0 h alpha
+    { runner
+    | w = lerp w0 w alpha
+    , h = lerp h0 h alpha
     }
-
 
 --------------------------------------------------------------------------------
 -- Track
@@ -243,52 +288,40 @@ type alias Obstacle
   }
 
 {-| Track model. -}
-type alias Track
-  = {
-    obstacles : List Obstacle,
-    seed : Seed
+type alias Track =
+  { obstacles : List Obstacle
   }
 
 {-| Default track model instance. -}
 initialTrack : Track
-initialTrack
-  = {
-    obstacles = [],
-    seed = initialSeed randomSeed
+initialTrack =
+  { obstacles = []
   }
-
-{-| A random generator yielding `Spikes` with probility 3/4 and `Hole` with
-probability 1/4. -}
-obstacleKindGenerator : Generator ObstacleKind
-obstacleKindGenerator =
-  let aux seed =
-    case generate (Random.int 0 3) seed of
-      (0, seed') -> (Hole, seed')
-      (_, seed') -> (Spikes, seed')
-  in customGenerator aux
 
 {-| Move obstacles toward the runner according to the elapsed time. -}
 advanceObstacles : Input -> Track -> Track
 advanceObstacles input track =
   let
-    x0 = canvasRight
     aux obstacle =
-      { obstacle | x <- x0 - (input.time - obstacle.spawnTime) * speed }
+      { obstacle
+      | x = canvasRight - (input.time - obstacle.spawnTime) * speed
+      }
   in
-    { track | obstacles <- List.map aux track.obstacles }
+    { track | obstacles = List.map aux track.obstacles }
 
 {-| Remove the obstacles that are already past the left edge of the canvas. -}
 dropInvisibleObstacles : Track -> Track
 dropInvisibleObstacles track =
-  let aux obstacle =
-    obstacle.x + toFloat(obstacle.units) * obstacleUnit <= canvasLeft
+  let
+    aux obstacle =
+      obstacle.x + toFloat(obstacle.units) * obstacleUnit <= canvasLeft
   in
-    { track | obstacles <- dropWhile aux track.obstacles }
+    { track | obstacles = dropWhile aux track.obstacles }
 
 {-| Spawn a new obstacle if the previously spawned one is sufficiently far from
 the right edge of the canvas. -}
-maybeSpawnObstacle : Input -> Track -> Track
-maybeSpawnObstacle input track =
+maybeSpawnObstacle : Input -> Track -> (Track, Cmd Msg)
+maybeSpawnObstacle input track = Tuple.pair track <|
   let
     x0 = canvasRight
     xMax = case last track.obstacles of
@@ -299,28 +332,33 @@ maybeSpawnObstacle input track =
       let
         t = input.time
         spawnTimeGenerator = Random.float t (t + minObstacleDistance / speed)
-        (kind, seed1) = generate obstacleKindGenerator track.seed
-        (spawnTime, seed2) = generate spawnTimeGenerator seed1
-        (units, seed3) = case kind of
-          Spikes -> generate (Random.int 1 maxSpikeUnits) seed2
-          Hole -> generate (Random.int 1 maxHoleUnits) seed2
-        obstacle
-          = {
-            kind = kind,
-            spawnTime = spawnTime,
-            x = x0,
-            units = units
-          }
+        obstackeKindGenerator = Random.weighted (3, Spikes) [(1, Hole)]
+        unitGenerator kind =
+          Random.int 1 <|
+          case kind of
+            Spikes -> maxSpikeUnits
+            Hole -> maxHoleUnits
+        obstacleGenerator =
+          obstackeKindGenerator
+          |> Random.andThen
+            (\kind -> Random.map2
+              (\spawnTime units ->
+                { kind = kind
+                , spawnTime = spawnTime
+                , x = x0
+                , units = units 
+                }
+              )
+              spawnTimeGenerator
+              (unitGenerator kind)
+            )
       in
-        { track |
-          obstacles <- track.obstacles ++ [obstacle],
-          seed <- seed3
-        }
+        Random.generate SpawnObstacle obstacleGenerator
     else
-      track
+      Cmd.none
 
 {-| Advance the track by a single step according to received input. -}
-trackStep : Input -> Track -> Track
+trackStep : Input -> Track -> (Track, Cmd Msg)
 trackStep input track =
   track
   |> advanceObstacles input
@@ -338,53 +376,67 @@ trackStep input track =
 type GameState = Paused | Playing
 
 {-| Application model. -}
-type alias Model
-  = {
-    state : GameState,
-    runner : Runner,
-    track : Track,
-    startTime : Float,
-    score : Int
+type alias Model =
+  { input : Input
+  , state : GameState
+  , runner : Runner
+  , track : Track
+  , millis : Int
+  , startMillis : Int
+  , score : Int
   }
 
 {-| Default application model instance. -}
-initialModel
-  = {
-    state = Paused,
-    runner = initialRunner,
-    track = initialTrack,
-    startTime = 0,
-    score = 0
+initialModel =
+  { state = Paused
+  , input =
+    { jump = False
+    , slide = False
+    , keys = Set.empty
+    , time = 0
+    }
+  , runner = initialRunner
+  , track = initialTrack
+  , millis = 0
+  , startMillis = 0
+  , score = 0
   }
 
 {-| Advance the game by a single step according to received input. -}
-step : Input -> Model -> Model
-step input model =
+step : Model -> (Model, Cmd Msg)
+step model =
   case model.state of
-    Paused -> pausedStep input model
-    Playing -> playingStep input model
+    Paused -> pausedStep model
+    Playing -> playingStep model
 
 {-| Subroutine of `step`, called when the game is in the `Paused` state. -}
-pausedStep : Input -> Model -> Model
-pausedStep input model =
-  if input.key == None || input.time < model.startTime + pauseMargin then model
-  else let track = model.track in
-    { model |
-      state <- Playing,
-      track <- { track | obstacles <- [] },
-      startTime <- input.time,
-      score <- 0
+pausedStep : Model -> (Model, Cmd Msg)
+pausedStep model = cmdless <|
+  if Set.isEmpty(model.input.keys) || model.input.time < pauseMargin then
+    model
+  else
+    { model
+    | track = initialTrack
+    , runner = initialRunner
+    , score = 0
     }
+    |> setGameState Playing
 
 {-| Subroutine of `step`, called when the game is in the `Playing` state. -}
-playingStep : Input -> Model -> Model
-playingStep input model
-  = { model |
-    runner <- runnerStep input model.runner,
-    track <- trackStep input model.track,
-    score <- floor ((input.time - model.startTime) * 10)
-  }
-  |> collisions input
+playingStep : Model -> (Model, Cmd Msg)
+playingStep model =
+  let
+    (runner, runnerCmd) = runnerStep model.input model.runner
+    (track, trackCmd) = trackStep model.input model.track
+  in
+    ( { model
+      | runner = runner
+      , track = track
+      , score = floor (model.input.time * 10)
+      }
+      |> collisions
+    , Cmd.batch [runnerCmd, trackCmd]
+    )
 
 {-| Check wether the runner collides with an obstacle. -}
 collides : Runner -> Obstacle -> Bool
@@ -402,14 +454,34 @@ collides runner obstacle =
 
 {-| Handle failure contition. If the runner collides with any obstacle, returns
 to the title screen. -}
-collisions : Input -> Model -> Model
-collisions input model =
+collisions : Model -> Model
+collisions model =
   if any (collides model.runner) model.track.obstacles then
-    { model |
-      state <- Paused,
-      startTime <- input.time }
+    setGameState Paused model
   else
     model
+
+init : () -> (Model, Cmd Msg)
+init _ = (initialModel, Cmd.none)
+
+update : Msg -> Model -> (Model, Cmd Msg)
+update msg model =
+  case msg of
+    Key state key -> applyKey state key model
+    Touch touch -> applyTouch touch model
+    Tick posix -> applyTick posix model
+    SpawnObstacle obstacle -> applySpawnObstacle obstacle model
+
+port onTouch : (String -> msg) -> Sub msg
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+  Sub.batch
+    [ Browser.Events.onKeyDown (keyDecoder True)
+    , Browser.Events.onKeyUp (keyDecoder False)
+    , Browser.Events.onAnimationFrame Tick
+    , onTouch Touch
+    ]
 
 --------------------------------------------------------------------------------
 -- Display
@@ -417,91 +489,150 @@ collisions input model =
 -- All drawing routines.
 --------------------------------------------------------------------------------
 
-{-| Produce a `Graphics.Collage.Form` representation of the runner. -}
-runnerForm : Runner -> Form
-runnerForm runner =
-  rect runner.w runner.h
-  |> filled fg
-  |> rotate runner.angle
-  |> move (0, runner.y + runner.h / 2)
+{-| Formats a `rotate` transform attribtue. -}
+rotate : Float -> String
+rotate angle = "rotate(" ++ String.fromFloat angle ++ ")"
 
-{-| Produce a `Graphics.Collage.Form` representation of an obstacle. -}
-obstacleForm : Obstacle -> Form
-obstacleForm obstacle = case obstacle.kind of
+{-| Formats a `translate` transform attribtue. -}
+translate : Float -> Float -> String
+translate x y
+  = "translate("
+  ++ String.fromFloat x
+  ++ ","
+  ++ String.fromFloat y
+  ++ ")"
+
+{-| Formats a list of points for an SVG polygon. -}
+points : List (Float, Float) -> String
+points ps =
+  List.map (\(x, y) -> String.fromFloat x ++ "," ++ String.fromFloat y) ps
+  |> String.join " "
+
+{-| Produce an `Svg` representation of the runner. -}
+runnerView : Runner -> Svg Msg
+runnerView runner =
+  Svg.g
+    [ Svg.Attributes.transform (translate runnerX (canvasHeight - runner.y - runner.h / 2))
+    ]
+    [ Svg.rect
+        [ Svg.Attributes.x (String.fromFloat (-runner.w / 2))
+        , Svg.Attributes.y (String.fromFloat (-runner.h / 2))
+        , Svg.Attributes.width (String.fromFloat runner.w)
+        , Svg.Attributes.height (String.fromFloat runner.h)
+        , Svg.Attributes.transform (rotate runner.angle)
+        ]
+        []
+    ]
+
+{-| Produce an `Svg` representation of an obstacle. -}
+obstacleView : Obstacle -> Svg Msg
+obstacleView obstacle = case obstacle.kind of
   Spikes ->
     let
-      radius = 2 * spikeH / 3
-      spikeForm i =
-        ngon 3 radius
-        |> filled fg
-        |> rotate (pi / 2)
-        |> move (toFloat(i) * obstacleUnit, 0)
+      spikeView i =
+        let x0 = toFloat(i) * obstacleUnit in
+        Svg.polygon
+          [ Svg.Attributes.points (points
+              [ (x0, 0)
+              , (x0 + obstacleUnit / 2, -spikeH)
+              , (x0 + obstacleUnit, 0)
+              ])
+          ]
+          []
     in
-      iter obstacle.units spikeForm
-      |> group
-      |> move (obstacle.x + obstacleUnit / 2, spikeH / 3)
-  Hole ->
-    let
-      w = toFloat(obstacle.units) * obstacleUnit
-      h = canvasHeight - runnerSize / 2
-    in
-      rect w h
-      |> filled fg
-      |> move (obstacle.x + w / 2, h / 2 + runnerSize / 2)
+      Svg.g
+        [ Svg.Attributes.transform (translate (runnerX + obstacle.x) canvasHeight) ]
+        (iter obstacle.units spikeView)
+  Hole -> Svg.rect
+    [ Svg.Attributes.x (String.fromFloat (runnerX + obstacle.x))
+    , Svg.Attributes.y "0"
+    , Svg.Attributes.width (String.fromFloat (toFloat obstacle.units * obstacleUnit))
+    , Svg.Attributes.height (String.fromFloat (canvasHeight - runnerSize / 2))
+    ]
+    []
 
-{-| Produce a `Graphics.Collage.Form` representation of the track. -}
-trackForm : Track -> Form
-trackForm track = group (List.map obstacleForm track.obstacles)
+--{-| Produce an `Svg` representation of the track. -}
+trackView : Track -> Svg Msg
+trackView track = Svg.g [] (List.map obstacleView track.obstacles)
 
-{-| Produce the title screen form. -}
-pausedForm : Model -> Form
-pausedForm model =
-  group [
-    Text.fromString "Elm Runner"
-    |> Text.color fg
-    |> Text.height 40
-    |> Text.monospace
-    |> centered
-    |> toForm
-    |> move (0, 20),
-    Text.fromString "UP to jump, DOWN to crouch\nAny key to start"
-    |> Text.color fg
-    |> Text.height 12
-    |> Text.monospace
-    |> centered
-    |> toForm
-    |> move (0, -20)
+--{-| Produce the title screen `Html`. -}
+pausedView =
+  Html.div
+  [ Html.Attributes.style "display" "flex"
+  , Html.Attributes.style "flex-direction" "column"
+  , Html.Attributes.style "justify-content" "center"
+  , Html.Attributes.style "align-items" "center"
+  , Html.Attributes.style "width" "100%"
+  , Html.Attributes.style "height" "100%"
+  , Html.Attributes.style "color" fg
+  ]
+  [ Html.div
+      [ Html.Attributes.style "font-size" "9vw"]
+      [ Html.text "Elm Runner" ]
+  , Html.div
+      [ Html.Attributes.style "font-size" "2.5vw"
+      , Html.Attributes.style "text-align" "center"
+      ]
+      [ Html.text "KEY UP or TOUCH RIGHT to jump"
+      , Html.br [] []
+      , Html.text "KEY DOWN or TOUCH LEFT  to crouch"
+      , Html.br [] []
+      , Html.text "Press anything to start"
+      ]
   ]
 
-{-| Produce a `Graphics.Collage.Form` representation of the whole scene. -}
-playingForm : Model -> Form
-playingForm model =
-  group [runnerForm model.runner, trackForm model.track]
-  |> move (runnerX, -canvasHeight / 2)
+--{-| Produce an `Svg` representation of the whole scene. -}
+playingView : Model -> List (Svg Msg)
+playingView model =
+  [ runnerView model.runner
+  , trackView model.track
+  ]
 
-{-| Produce a `Graphics.Element` representation of the score. -}
-scoreElement : Model -> Element
-scoreElement model =
-  Text.fromString ("Score: " ++ toString model.score)
-  |> Text.color bg
-  |> Text.height 12
-  |> Text.monospace
-  |> leftAligned
-  |> Graphics.Element.color fg
-
-{-| Display the application as a `Graphics.Element`. -}
-display : (Int, Int) -> Model -> Element
-display (w, h) model =
-  container w h middle (
-    scoreElement model
-    `above`
-    collage canvasWidth canvasHeight [
-      rect canvasWidth canvasHeight |> filled bg,
-      case model.state of
-        Paused -> pausedForm model
-        Playing -> playingForm model
+view : Model -> Html Msg
+view model =
+  Html.div
+    [ Html.Attributes.style "pointer-events" "none"
+    , Html.Attributes.style "user-select" "none"
     ]
-  )
+    [ Html.div
+        [ Html.Attributes.style "color" bg
+        , Html.Attributes.style "font-size" "3vw"
+        , Html.Attributes.style "margin" "1vw"
+        ]
+        [ Html.text ("Score: " ++ (String.fromInt model.score)) ]
+    , Html.div
+        [ Html.Attributes.style "background-color" bg
+        , Html.Attributes.style "position" "relative"
+        , Html.Attributes.style "margin-bottom" "6vw"
+        ]
+        [ svg
+            [ Svg.Attributes.display "block"
+            , Svg.Attributes.width "100%"
+            , Svg.Attributes.viewBox
+                ("0 0 "
+                ++ (String.fromInt canvasWidth)
+                ++ " "
+                ++ (String.fromInt canvasHeight)
+                )
+            , Svg.Attributes.fill fg
+            ]
+            (if model.state == Playing then playingView model else [])
+        , Html.div
+            [ Html.Attributes.style "position" "absolute"
+            , Html.Attributes.style "top" "0"
+            , Html.Attributes.style "left" "0"
+            , Html.Attributes.style "bottom" "0"
+            , Html.Attributes.style "right" "0"
+            ]
+            (if model.state == Paused then [pausedView] else [])
+        ]
+      ]
 
 {-| The entry point of the application -}
-main = display <~ Window.dimensions ~ foldp step initialModel input
+--main = display <~ Window.dimensions ~ foldp step initialModel input
+main = Browser.element
+  { init = init
+  , view = view
+  , update = update
+  , subscriptions = subscriptions
+  }
