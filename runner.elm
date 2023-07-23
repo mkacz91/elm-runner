@@ -31,7 +31,6 @@ jumpDistance = 6.0
 dimTransitionDistance = 1.0
 speed = 10.0
 obstacleUnit = 1.5
-minObstacleDistance = 3.5
 obstacleMargin = 0.25
 maxSpikeUnits = 3
 maxHoleUnits = 5
@@ -312,44 +311,48 @@ dropInvisibleObstacles track =
   in
     { track | obstacles = dropWhile aux track.obstacles }
 
+optimalClearX : Obstacle -> Float -> Float
+optimalClearX obstacle x0=
+  let
+    obstacleW = toFloat obstacle.units * obstacleUnit
+    x1 = obstacle.x + obstacleW - obstacleMargin + 0.5
+  in case obstacle.kind of
+    Hole -> x1 + 2.0
+    Spikes -> max x1 (x0 + jumpDistance)
+
 {-| Spawn a new obstacle if the previously spawned one is sufficiently far from
 the right edge of the canvas. -}
 maybeSpawnObstacle : Input -> Track -> (Track, Cmd Msg)
 maybeSpawnObstacle input track = Tuple.pair track <|
+  let xc = List.foldl optimalClearX 0 track.obstacles
+  in if xc > canvasRight then Cmd.none else
   let
-    x0 = canvasRight
-    xMax = case last track.obstacles of
-      Just obstacle -> obstacle.x + (toFloat obstacle.units) * obstacleUnit
-      Nothing -> 0
+    s = input.distance
+    -- Asymptotic fall from 5 to 1.7. Around 3.7 at distance 500.
+    gap = (5.0 - 1.7) * e^(-s / 1000.0) + 1.7
+    spawnDistanceGenerator = Random.float (s + gap) (s + 2 * gap)
+    obstackeKindGenerator = Random.weighted (3, Spikes) [(1, Hole)]
+    unitGenerator kind =
+      Random.int 1 <|
+      case kind of
+        Spikes -> maxSpikeUnits
+        Hole -> maxHoleUnits
+    obstacleGenerator =
+      obstackeKindGenerator
+      |> Random.andThen
+        (\kind -> Random.map2
+          (\spawnDistance units ->
+            { kind = kind
+            , spawnDistance = spawnDistance
+            , x = canvasRight + spawnDistance - s
+            , units = units 
+            }
+          )
+          spawnDistanceGenerator
+          (unitGenerator kind)
+        )
   in
-    if x0 - xMax >= minObstacleDistance then
-      let
-        s = input.distance
-        spawnDistanceGenerator = Random.float s (s + minObstacleDistance)
-        obstackeKindGenerator = Random.weighted (3, Spikes) [(1, Hole)]
-        unitGenerator kind =
-          Random.int 1 <|
-          case kind of
-            Spikes -> maxSpikeUnits
-            Hole -> maxHoleUnits
-        obstacleGenerator =
-          obstackeKindGenerator
-          |> Random.andThen
-            (\kind -> Random.map2
-              (\spawnDistance units ->
-                { kind = kind
-                , spawnDistance = spawnDistance
-                , x = x0
-                , units = units 
-                }
-              )
-              spawnDistanceGenerator
-              (unitGenerator kind)
-            )
-      in
-        Random.generate SpawnObstacle obstacleGenerator
-    else
-      Cmd.none
+    Random.generate SpawnObstacle obstacleGenerator
 
 {-| Advance the track by a single step according to received input. -}
 trackStep : Input -> Track -> (Track, Cmd Msg)
@@ -437,8 +440,8 @@ collides : Runner -> Input -> Obstacle -> Bool
 collides runner input obstacle =
   let
     x0 = obstacle.x - runner.w / 2 + obstacleMargin
-    x1 = obstacle.x + toFloat obstacle.units  * obstacleUnit
-       + runner.w / 2 - obstacleMargin
+    x1 = obstacle.x + toFloat obstacle.units * obstacleUnit
+      + 0.5 - obstacleMargin
     overlapsX x = x0 < x && x < x1
   in case obstacle.kind of
     Hole -> overlapsX 0 && runner.h > 0.5
