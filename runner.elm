@@ -86,6 +86,7 @@ cmdless x = (x, Cmd.none)
 type Msg
   = Tick Time.Posix
   | Key Bool String
+  | Touch String
   | SpawnObstacle Obstacle
 
 applyTick : Time.Posix -> Model -> (Model, Cmd Msg)
@@ -118,11 +119,23 @@ applyKey state key model = cmdless <|
     input =
       { oldInput
       | keys = keys
-      , jump = Set.member "Up" keys || Set.member "ArrowUp" keys
-      , slide = Set.member "Down" keys || Set.member "ArrowDown" keys
+      , jump = Set.member "Up" keys
+          || Set.member "ArrowUp" keys
+          || Set.member "RightTouch" keys
+      , slide = Set.member "Down" keys
+          || Set.member "ArrowDown" keys
+          || Set.member "LeftTouch" keys
       }
   in
     { model | input = input }
+
+applyTouch : String -> Model -> (Model, Cmd Msg)
+applyTouch touch model0 =
+  let
+    (model1, cmd1) = applyKey (String.contains "L" touch) "LeftTouch" model0
+    (model2, cmd2) = applyKey (String.contains "R" touch) "RightTouch" model1
+  in
+    (model2, Cmd.batch [cmd1, cmd2])
 
 applySpawnObstacle : Obstacle -> Model -> (Model, Cmd Msg)
 applySpawnObstacle obstacle model = cmdless <|
@@ -455,8 +468,11 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Key state key -> applyKey state key model
+    Touch touch -> applyTouch touch model
     Tick posix -> applyTick posix model
     SpawnObstacle obstacle -> applySpawnObstacle obstacle model
+
+port onTouch : (String -> msg) -> Sub msg
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -464,6 +480,7 @@ subscriptions model =
     [ Browser.Events.onKeyDown (keyDecoder True)
     , Browser.Events.onKeyUp (keyDecoder False)
     , Browser.Events.onAnimationFrame Tick
+    , onTouch Touch
     ]
 
 --------------------------------------------------------------------------------
@@ -556,11 +573,11 @@ pausedView =
       [ Html.Attributes.style "font-size" "2.5vw"
       , Html.Attributes.style "text-align" "center"
       ]
-      [ Html.text "KEY UP / TOUCH LEFT to jump"
+      [ Html.text "KEY UP or TOUCH RIGHT to jump"
       , Html.br [] []
-      , Html.text "KEY DOWN / TOUCH RIGHT to crouch"
+      , Html.text "KEY DOWN or TOUCH LEFT  to crouch"
       , Html.br [] []
-      , Html.text "Any key / touch to start"
+      , Html.text "Press anything to start"
       ]
   ]
 
@@ -574,7 +591,9 @@ playingView model =
 view : Model -> Html Msg
 view model =
   Html.div
-    []
+    [ Html.Attributes.style "pointer-events" "none"
+    , Html.Attributes.style "user-select" "none"
+    ]
     [ Html.div
         [ Html.Attributes.style "color" bg
         , Html.Attributes.style "font-size" "3vw"
@@ -584,6 +603,7 @@ view model =
     , Html.div
         [ Html.Attributes.style "background-color" bg
         , Html.Attributes.style "position" "relative"
+        , Html.Attributes.style "margin-bottom" "6vw"
         ]
         [ svg
             [ Svg.Attributes.display "block"
