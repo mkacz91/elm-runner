@@ -193,29 +193,28 @@ initialRunner
     snapshotDistance = 0
   }
 
+setRunnerState : Input -> RunnerState -> Runner -> Runner
+setRunnerState input state runner =
+  { runner
+  | state = state
+  , dimSnapshot = (runner.w, runner.h)
+  , snapshotDistance = input.distance
+  }
+
 {-| Advance the runner a step forward according to received input. -}
 runnerStep : Input -> Runner -> (Runner, Cmd Msg)
-runnerStep input runner = cmdless <|
-  let
-    setState state =
-      { runner
-      | state = state
-      , dimSnapshot = (runner.w, runner.h)
-      , snapshotDistance = input.distance
-      }
-  in
-    if input.jump && runner.state /= Jumping then
-      setState Jumping
-    else if input.slide && runner.state == Running then
-      setState Sliding
-    else if Set.isEmpty(input.keys) && runner.state == Sliding then
-      setState Running
-    else if runner.state == Jumping then
-      jumpStep input runner
-    else if runner.state == Sliding then
-      slideStep input runner
-    else
-      runStep input runner
+runnerStep input runner =
+  cmdless <|
+  dimTransition input <|
+  if input.jump && runner.state /= Jumping then
+    setRunnerState input Jumping runner
+  else if input.slide && runner.state == Running then
+    setRunnerState input Sliding runner
+  else if Set.isEmpty(input.keys) && runner.state == Sliding then
+    setRunnerState input Running runner
+  else if runner.state == Jumping then
+    jumpStep input runner
+  else runner
 
 {-| A subroutine of `runnerStep`, called when no state transition has taken
 place and the runner is in `Jumping` state. -}
@@ -229,43 +228,41 @@ jumpStep input runner =
   in
     if d <= ds then
       { runner
-      | state = Running
-      , y = 0
+      | y = 0
       , angle = 0
-      , dimSnapshot = (runnerSize, runnerSize)
-      , snapshotDistance = input.distance
       }
+      |> setRunnerState input Running
     else
       { runner
       | y = a * ds * (d - ds)
       , angle = ds / d * 90
       }
-      |> dimTransition input runnerSize runnerSize
-
-{-| A subroutine of `runnerStep`, called when no state transition has taken
-place and the runner is in `Sliding` state. -}
-slideStep : Input -> Runner -> Runner
-slideStep input =
-  dimTransition input (2 * runnerSize) (runnerSize / 2)
-
-{-| A subroutine of `runnerStep`, called when no state transition has taken
-place and the runner is in `Running` state. -}
-runStep : Input -> Runner -> Runner
-runStep input =
-  dimTransition input runnerSize runnerSize
 
 {-| Animates the change in runner dimenstions. -}
-dimTransition : Input -> Float -> Float -> Runner -> Runner
-dimTransition input w h runner =
+dimTransition : Input -> Runner -> Runner
+dimTransition input runner =
   let
+    h1 = case runner.state of
+      Running -> runnerSize
+      Jumping -> runnerSize
+      Sliding -> 0.5 * runnerSize
+    w1 = runnerSize * runnerSize / h1
+    deviation = (abs (runner.h - h1)) / (0.5 * runnerSize)
+    requiredDistance = dimTransitionDistance * deviation
     ds = input.distance - runner.snapshotDistance
-    alpha = (min dimTransitionDistance ds) / dimTransitionDistance
     (w0, h0) = runner.dimSnapshot
   in
-    { runner
-    | w = lerp w0 w alpha
-    , h = lerp h0 h alpha
-    }
+    if ds >= requiredDistance then
+      { runner
+      | w = w1
+      , h = h1
+      }
+    else
+      let alpha = ds / requiredDistance in
+      { runner
+      | w = lerp w0 w1 alpha
+      , h = lerp h0 h1 alpha
+      }
 
 --------------------------------------------------------------------------------
 -- Track
