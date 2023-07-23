@@ -20,20 +20,19 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-canvasWidth = 600
-canvasHeight = 120
+canvasWidth = 30
+canvasHeight = 6
 bg = "rgb(32, 74, 135)"
 fg = "white"
 
-runnerSize = 20.0
-runnerX = 200.0
-jumpHeight = 50.0
-jumpDistance = 120.0
-dimTransitionDistance = 20.0
-speed = 200.0
-obstacleUnit = 30.0
-minObstacleDistance = 70.0
-obstacleMargin = 5
+runnerX = 9.0
+jumpHeight = 2.5
+jumpDistance = 6.0
+dimTransitionDistance = 1.0
+speed = 10.0
+obstacleUnit = 1.5
+minObstacleDistance = 3.5
+obstacleMargin = 0.25
 maxSpikeUnits = 3
 maxHoleUnits = 5
 
@@ -185,11 +184,11 @@ initialRunner : Runner
 initialRunner
   = {
     state = Running,
-    y = 0,
-    w = runnerSize,
-    h = runnerSize,
+    y = 0.0,
+    w = 1.0,
+    h = 1.0,
     angle = 0,
-    dimSnapshot = (runnerSize, runnerSize),
+    dimSnapshot = (1.0, 1.0),
     snapshotDistance = 0
   }
 
@@ -243,11 +242,11 @@ dimTransition : Input -> Runner -> Runner
 dimTransition input runner =
   let
     h1 = case runner.state of
-      Running -> runnerSize
-      Jumping -> runnerSize
-      Sliding -> 0.5 * runnerSize
-    w1 = runnerSize * runnerSize / h1
-    deviation = (abs (runner.h - h1)) / (0.5 * runnerSize)
+      Running -> 1.0
+      Jumping -> 1.0
+      Sliding -> 0.5
+    w1 = 1.0 / h1
+    deviation = (abs (runner.h - h1)) / 0.5
     requiredDistance = dimTransitionDistance * deviation
     ds = input.distance - runner.snapshotDistance
     (w0, h0) = runner.dimSnapshot
@@ -428,7 +427,7 @@ playingStep model =
     ( { model
       | runner = runner
       , track = track
-      , score = floor (model.input.distance / 20.0)
+      , score = floor model.input.distance
       }
       |> collisions
     , Cmd.batch [runnerCmd, trackCmd]
@@ -446,7 +445,7 @@ collides runner obstacle =
     h = runner.h
   in case obstacle.kind of
     Spikes -> y < spikeH - obstacleMargin && y < -sqrt3 * x0 && y < sqrt3 * x1
-    Hole -> x0 < 0 && 0 < x1 && h > runnerSize / 2
+    Hole -> x0 < 0 && 0 < x1 && h > 0.5
 
 {-| Handle failure contition. If the runner collides with any obstacle, returns
 to the title screen. -}
@@ -543,7 +542,7 @@ obstacleView obstacle = case obstacle.kind of
     [ Svg.Attributes.x (String.fromFloat (runnerX + obstacle.x))
     , Svg.Attributes.y "0"
     , Svg.Attributes.width (String.fromFloat (toFloat obstacle.units * obstacleUnit))
-    , Svg.Attributes.height (String.fromFloat (canvasHeight - runnerSize / 2))
+    , Svg.Attributes.height (String.fromFloat (canvasHeight - 0.5))
     ]
     []
 
