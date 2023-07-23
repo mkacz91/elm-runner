@@ -5250,19 +5250,18 @@ var $elm$core$Dict$RBEmpty_elm_builtin = {$: 'RBEmpty_elm_builtin'};
 var $elm$core$Dict$empty = $elm$core$Dict$RBEmpty_elm_builtin;
 var $elm$core$Set$empty = $elm$core$Set$Set_elm_builtin($elm$core$Dict$empty);
 var $author$project$Main$Running = {$: 'Running'};
-var $author$project$Main$runnerSize = 20.0;
 var $author$project$Main$initialRunner = {
 	angle: 0,
-	dimSnapshot: _Utils_Tuple2($author$project$Main$runnerSize, $author$project$Main$runnerSize),
-	h: $author$project$Main$runnerSize,
-	snapshotTime: 0,
+	dimSnapshot: _Utils_Tuple2(1.0, 1.0),
+	h: 1.0,
+	snapshotDistance: 0,
 	state: $author$project$Main$Running,
-	w: $author$project$Main$runnerSize,
-	y: 0
+	w: 1.0,
+	y: 0.0
 };
 var $author$project$Main$initialTrack = {obstacles: _List_Nil};
 var $author$project$Main$initialModel = {
-	input: {jump: false, keys: $elm$core$Set$empty, slide: false, time: 0},
+	input: {distance: 0, jump: false, keys: $elm$core$Set$empty, slide: false},
 	millis: 0,
 	runner: $author$project$Main$initialRunner,
 	score: 0,
@@ -6302,6 +6301,7 @@ var $elm$time$Time$posixToMillis = function (_v0) {
 	var millis = _v0.a;
 	return millis;
 };
+var $author$project$Main$speed = 10.0;
 var $author$project$Main$Playing = {$: 'Playing'};
 var $elm$core$Dict$isEmpty = function (dict) {
 	if (dict.$ === 'RBEmpty_elm_builtin') {
@@ -6314,7 +6314,6 @@ var $elm$core$Set$isEmpty = function (_v0) {
 	var dict = _v0.a;
 	return $elm$core$Dict$isEmpty(dict);
 };
-var $author$project$Main$pauseMargin = 1.0;
 var $author$project$Main$setGameState = F2(
 	function (state, model) {
 		var oldInput = model.input;
@@ -6323,14 +6322,14 @@ var $author$project$Main$setGameState = F2(
 			{
 				input: _Utils_update(
 					oldInput,
-					{time: 0}),
+					{distance: 0}),
 				startMillis: model.millis,
 				state: state
 			});
 	});
 var $author$project$Main$pausedStep = function (model) {
 	return $author$project$Main$cmdless(
-		($elm$core$Set$isEmpty(model.input.keys) || (_Utils_cmp(model.input.time, $author$project$Main$pauseMargin) < 0)) ? model : A2(
+		($elm$core$Set$isEmpty(model.input.keys) || ((model.millis - model.startMillis) < 1000)) ? model : A2(
 			$author$project$Main$setGameState,
 			$author$project$Main$Playing,
 			_Utils_update(
@@ -6358,118 +6357,125 @@ var $elm$core$List$any = F2(
 			}
 		}
 	});
-var $elm$core$Basics$negate = function (n) {
-	return -n;
-};
-var $author$project$Main$obstacleMargin = 5;
-var $author$project$Main$obstacleUnit = 30.0;
+var $author$project$Main$Jumping = {$: 'Jumping'};
+var $elm$core$Basics$ge = _Utils_ge;
+var $author$project$Main$jumpDistance = 6.0;
+var $elm$core$Basics$neq = _Utils_notEqual;
+var $author$project$Main$obstacleMargin = 0.25;
+var $author$project$Main$obstacleUnit = 1.5;
 var $elm$core$Basics$sqrt = _Basics_sqrt;
 var $author$project$Main$sqrt3 = $elm$core$Basics$sqrt(3);
 var $author$project$Main$spikeH = ($author$project$Main$sqrt3 / 2) * $author$project$Main$obstacleUnit;
-var $author$project$Main$collides = F2(
-	function (runner, obstacle) {
-		var y = runner.y;
-		var x1 = ((obstacle.x + (obstacle.units * $author$project$Main$obstacleUnit)) + (runner.w / 2)) - $author$project$Main$obstacleMargin;
+var $author$project$Main$collides = F3(
+	function (runner, input, obstacle) {
+		var x1 = ((obstacle.x + (obstacle.units * $author$project$Main$obstacleUnit)) + 0.5) - $author$project$Main$obstacleMargin;
 		var x0 = (obstacle.x - (runner.w / 2)) + $author$project$Main$obstacleMargin;
-		var x = 0;
-		var h = runner.h;
+		var overlapsX = function (x) {
+			return (_Utils_cmp(x0, x) < 0) && (_Utils_cmp(x, x1) < 0);
+		};
 		var _v0 = obstacle.kind;
-		if (_v0.$ === 'Spikes') {
-			return (_Utils_cmp(y, $author$project$Main$spikeH - $author$project$Main$obstacleMargin) < 0) && ((_Utils_cmp(y, (-$author$project$Main$sqrt3) * x0) < 0) && (_Utils_cmp(y, $author$project$Main$sqrt3 * x1) < 0));
+		if (_v0.$ === 'Hole') {
+			return overlapsX(0) && (runner.h > 0.5);
 		} else {
-			return (x0 < 0) && ((0 < x1) && (_Utils_cmp(h, $author$project$Main$runnerSize / 2) > 0));
+			return (!_Utils_eq(runner.state, $author$project$Main$Jumping)) ? overlapsX(0) : ((_Utils_cmp(input.distance, runner.snapshotDistance + (0.5 * $author$project$Main$jumpDistance)) > -1) ? (overlapsX(($author$project$Main$jumpDistance - input.distance) + runner.snapshotDistance) && (_Utils_cmp(runner.y, $author$project$Main$spikeH - $author$project$Main$obstacleMargin) < 0)) : false);
 		}
 	});
 var $author$project$Main$collisions = function (model) {
 	return A2(
 		$elm$core$List$any,
-		$author$project$Main$collides(model.runner),
+		A2($author$project$Main$collides, model.runner, model.input),
 		model.track.obstacles) ? A2($author$project$Main$setGameState, $author$project$Main$Paused, model) : model;
 };
-var $author$project$Main$Jumping = {$: 'Jumping'};
 var $author$project$Main$Sliding = {$: 'Sliding'};
+var $elm$core$Basics$negate = function (n) {
+	return -n;
+};
+var $elm$core$Basics$abs = function (n) {
+	return (n < 0) ? (-n) : n;
+};
+var $author$project$Main$dimTransitionDistance = 1.0;
 var $author$project$Main$lerp = F3(
 	function (x, y, alpha) {
 		return ((1 - alpha) * x) + (alpha * y);
 	});
-var $elm$core$Basics$min = F2(
-	function (x, y) {
-		return (_Utils_cmp(x, y) < 0) ? x : y;
-	});
-var $author$project$Main$dimTransition = F5(
-	function (input, duration, w, h, runner) {
-		var dt = input.time - runner.snapshotTime;
-		var alpha = A2($elm$core$Basics$min, duration, dt) / duration;
+var $author$project$Main$dimTransition = F2(
+	function (input, runner) {
+		var h1 = function () {
+			var _v1 = runner.state;
+			switch (_v1.$) {
+				case 'Running':
+					return 1.0;
+				case 'Jumping':
+					return 1.0;
+				default:
+					return 0.5;
+			}
+		}();
+		var w1 = 1.0 / h1;
+		var ds = input.distance - runner.snapshotDistance;
+		var deviation = $elm$core$Basics$abs(runner.h - h1) / 0.5;
+		var requiredDistance = $author$project$Main$dimTransitionDistance * deviation;
 		var _v0 = runner.dimSnapshot;
 		var w0 = _v0.a;
 		var h0 = _v0.b;
+		if (_Utils_cmp(ds, requiredDistance) > -1) {
+			return _Utils_update(
+				runner,
+				{h: h1, w: w1});
+		} else {
+			var alpha = ds / requiredDistance;
+			return _Utils_update(
+				runner,
+				{
+					h: A3($author$project$Main$lerp, h0, h1, alpha),
+					w: A3($author$project$Main$lerp, w0, w1, alpha)
+				});
+		}
+	});
+var $author$project$Main$jumpHeight = 2.5;
+var $author$project$Main$setRunnerState = F3(
+	function (input, state, runner) {
 		return _Utils_update(
 			runner,
 			{
-				h: A3($author$project$Main$lerp, h0, h, alpha),
-				w: A3($author$project$Main$lerp, w0, w, alpha)
+				dimSnapshot: _Utils_Tuple2(runner.w, runner.h),
+				snapshotDistance: input.distance,
+				state: state
 			});
 	});
-var $author$project$Main$dimTransitionDuration = 0.1;
-var $author$project$Main$jumpDuration = 0.6;
-var $author$project$Main$jumpHeight = 50.0;
 var $author$project$Main$jumpStep = F2(
 	function (input, runner) {
 		var h = $author$project$Main$jumpHeight;
-		var dt = input.time - runner.snapshotTime;
-		var d = $author$project$Main$jumpDuration;
+		var ds = input.distance - runner.snapshotDistance;
+		var d = $author$project$Main$jumpDistance;
 		var a = (4 * h) / (d * d);
-		return (_Utils_cmp(d, dt) < 1) ? _Utils_update(
-			runner,
-			{
-				angle: 0,
-				dimSnapshot: _Utils_Tuple2($author$project$Main$runnerSize, $author$project$Main$runnerSize),
-				snapshotTime: input.time,
-				state: $author$project$Main$Running,
-				y: 0
-			}) : A5(
-			$author$project$Main$dimTransition,
+		return (_Utils_cmp(d, ds) < 1) ? A3(
+			$author$project$Main$setRunnerState,
 			input,
-			$author$project$Main$dimTransitionDuration,
-			$author$project$Main$runnerSize,
-			$author$project$Main$runnerSize,
+			$author$project$Main$Running,
 			_Utils_update(
 				runner,
-				{angle: (dt / d) * 90, y: (a * dt) * (d - dt)}));
+				{angle: 0, y: 0})) : _Utils_update(
+			runner,
+			{angle: (ds / d) * 90, y: (a * ds) * (d - ds)});
 	});
-var $elm$core$Basics$neq = _Utils_notEqual;
-var $author$project$Main$runStep = function (input) {
-	return A4($author$project$Main$dimTransition, input, $author$project$Main$dimTransitionDuration, $author$project$Main$runnerSize, $author$project$Main$runnerSize);
-};
-var $author$project$Main$slideStep = function (input) {
-	return A4($author$project$Main$dimTransition, input, $author$project$Main$dimTransitionDuration, 2 * $author$project$Main$runnerSize, $author$project$Main$runnerSize / 2);
-};
 var $author$project$Main$runnerStep = F2(
 	function (input, runner) {
 		return $author$project$Main$cmdless(
-			function () {
-				var setState = function (state) {
-					return _Utils_update(
-						runner,
-						{
-							dimSnapshot: _Utils_Tuple2(runner.w, runner.h),
-							snapshotTime: input.time,
-							state: state
-						});
-				};
-				return (input.jump && (!_Utils_eq(runner.state, $author$project$Main$Jumping))) ? setState($author$project$Main$Jumping) : ((input.slide && _Utils_eq(runner.state, $author$project$Main$Running)) ? setState($author$project$Main$Sliding) : (($elm$core$Set$isEmpty(input.keys) && _Utils_eq(runner.state, $author$project$Main$Sliding)) ? setState($author$project$Main$Running) : (_Utils_eq(runner.state, $author$project$Main$Jumping) ? A2($author$project$Main$jumpStep, input, runner) : (_Utils_eq(runner.state, $author$project$Main$Sliding) ? A2($author$project$Main$slideStep, input, runner) : A2($author$project$Main$runStep, input, runner)))));
-			}());
+			A2(
+				$author$project$Main$dimTransition,
+				input,
+				(input.jump && (!_Utils_eq(runner.state, $author$project$Main$Jumping))) ? A3($author$project$Main$setRunnerState, input, $author$project$Main$Jumping, runner) : ((input.slide && _Utils_eq(runner.state, $author$project$Main$Running)) ? A3($author$project$Main$setRunnerState, input, $author$project$Main$Sliding, runner) : (($elm$core$Set$isEmpty(input.keys) && _Utils_eq(runner.state, $author$project$Main$Sliding)) ? A3($author$project$Main$setRunnerState, input, $author$project$Main$Running, runner) : (_Utils_eq(runner.state, $author$project$Main$Jumping) ? A2($author$project$Main$jumpStep, input, runner) : runner)))));
 	});
-var $author$project$Main$canvasWidth = 600;
-var $author$project$Main$runnerX = 200.0;
+var $author$project$Main$canvasWidth = 30;
+var $author$project$Main$runnerX = 9.0;
 var $author$project$Main$canvasRight = $author$project$Main$canvasWidth - $author$project$Main$runnerX;
-var $author$project$Main$speed = 200.0;
 var $author$project$Main$advanceObstacles = F2(
 	function (input, track) {
 		var aux = function (obstacle) {
 			return _Utils_update(
 				obstacle,
-				{x: $author$project$Main$canvasRight - ((input.time - obstacle.spawnTime) * $author$project$Main$speed)});
+				{x: $author$project$Main$canvasRight - (input.distance - obstacle.spawnDistance)});
 		};
 		return _Utils_update(
 			track,
@@ -6530,9 +6536,7 @@ var $elm$random$Random$andThen = F2(
 				return genB(newSeed);
 			});
 	});
-var $elm$core$Basics$abs = function (n) {
-	return (n < 0) ? (-n) : n;
-};
+var $elm$core$Basics$e = _Basics_e;
 var $elm$core$Bitwise$and = _Bitwise_and;
 var $elm$random$Random$Seed = F2(
 	function (a, b) {
@@ -6567,7 +6571,6 @@ var $elm$random$Random$float = F2(
 					$elm$random$Random$next(seed1));
 			});
 	});
-var $elm$core$Basics$ge = _Utils_ge;
 var $elm$random$Random$Generate = function (a) {
 	return {$: 'Generate', a: a};
 };
@@ -6686,24 +6689,6 @@ var $elm$random$Random$int = F2(
 				}
 			});
 	});
-var $author$project$Main$last = function (xs) {
-	last:
-	while (true) {
-		if (!xs.b) {
-			return $elm$core$Maybe$Nothing;
-		} else {
-			if (!xs.b.b) {
-				var x = xs.a;
-				return $elm$core$Maybe$Just(x);
-			} else {
-				var xs_ = xs.b;
-				var $temp$xs = xs_;
-				xs = $temp$xs;
-				continue last;
-			}
-		}
-	}
-};
 var $elm$random$Random$map2 = F3(
 	function (func, _v0, _v1) {
 		var genA = _v0.a;
@@ -6723,11 +6708,22 @@ var $elm$random$Random$map2 = F3(
 	});
 var $author$project$Main$maxHoleUnits = 5;
 var $author$project$Main$maxSpikeUnits = 3;
-var $author$project$Main$minObstacleDistance = 70.0;
+var $author$project$Main$optimalClearX = F2(
+	function (obstacle, x0) {
+		var obstacleW = obstacle.units * $author$project$Main$obstacleUnit;
+		var x1 = ((obstacle.x + obstacleW) - $author$project$Main$obstacleMargin) + 0.5;
+		var _v0 = obstacle.kind;
+		if (_v0.$ === 'Hole') {
+			return x1 + 2.0;
+		} else {
+			return A2($elm$core$Basics$max, x1, x0 + $author$project$Main$jumpDistance);
+		}
+	});
 var $elm$core$Tuple$pair = F2(
 	function (a, b) {
 		return _Utils_Tuple2(a, b);
 	});
+var $elm$core$Basics$pow = _Basics_pow;
 var $elm$random$Random$getByWeight = F3(
 	function (_v0, others, countdown) {
 		getByWeight:
@@ -6777,17 +6773,10 @@ var $author$project$Main$maybeSpawnObstacle = F2(
 			$elm$core$Tuple$pair,
 			track,
 			function () {
-				var xMax = function () {
-					var _v1 = $author$project$Main$last(track.obstacles);
-					if (_v1.$ === 'Just') {
-						var obstacle = _v1.a;
-						return obstacle.x + (obstacle.units * $author$project$Main$obstacleUnit);
-					} else {
-						return 0;
-					}
-				}();
-				var x0 = $author$project$Main$canvasRight;
-				if (_Utils_cmp(x0 - xMax, $author$project$Main$minObstacleDistance) > -1) {
+				var xc = A3($elm$core$List$foldl, $author$project$Main$optimalClearX, 0, track.obstacles);
+				if (_Utils_cmp(xc, $author$project$Main$canvasRight) > 0) {
+					return $elm$core$Platform$Cmd$none;
+				} else {
 					var unitGenerator = function (kind) {
 						return A2(
 							$elm$random$Random$int,
@@ -6800,8 +6789,7 @@ var $author$project$Main$maybeSpawnObstacle = F2(
 								}
 							}());
 					};
-					var t = input.time;
-					var spawnTimeGenerator = A2($elm$random$Random$float, t, t + ($author$project$Main$minObstacleDistance / $author$project$Main$speed));
+					var s = input.distance;
 					var obstackeKindGenerator = A2(
 						$elm$random$Random$weighted,
 						_Utils_Tuple2(3, $author$project$Main$Spikes),
@@ -6809,22 +6797,22 @@ var $author$project$Main$maybeSpawnObstacle = F2(
 							[
 								_Utils_Tuple2(1, $author$project$Main$Hole)
 							]));
+					var gap = ((5.0 - 1.7) * A2($elm$core$Basics$pow, $elm$core$Basics$e, (-s) / 1000.0)) + 1.7;
+					var spawnDistanceGenerator = A2($elm$random$Random$float, s + gap, s + (2 * gap));
 					var obstacleGenerator = A2(
 						$elm$random$Random$andThen,
 						function (kind) {
 							return A3(
 								$elm$random$Random$map2,
 								F2(
-									function (spawnTime, units) {
-										return {kind: kind, spawnTime: spawnTime, units: units, x: x0};
+									function (spawnDistance, units) {
+										return {kind: kind, spawnDistance: spawnDistance, units: units, x: ($author$project$Main$canvasRight + spawnDistance) - s};
 									}),
-								spawnTimeGenerator,
+								spawnDistanceGenerator,
 								unitGenerator(kind));
 						},
 						obstackeKindGenerator);
 					return A2($elm$random$Random$generate, $author$project$Main$SpawnObstacle, obstacleGenerator);
-				} else {
-					return $elm$core$Platform$Cmd$none;
 				}
 			}());
 	});
@@ -6849,7 +6837,7 @@ var $author$project$Main$playingStep = function (model) {
 				model,
 				{
 					runner: runner,
-					score: $elm$core$Basics$floor(model.input.time * 10),
+					score: $elm$core$Basics$floor(model.input.distance),
 					track: track
 				})),
 		$elm$core$Platform$Cmd$batch(
@@ -6870,7 +6858,7 @@ var $author$project$Main$applyTick = F2(
 		var millis = $elm$time$Time$posixToMillis(posix);
 		var input = _Utils_update(
 			oldInput,
-			{time: (millis - model.startMillis) / 1000});
+			{distance: ((millis - model.startMillis) * $author$project$Main$speed) / 1000.0});
 		return $author$project$Main$step(
 			_Utils_update(
 				model,
@@ -6917,7 +6905,7 @@ var $author$project$Main$update = F2(
 		}
 	});
 var $author$project$Main$bg = 'rgb(32, 74, 135)';
-var $author$project$Main$canvasHeight = 120;
+var $author$project$Main$canvasHeight = 6;
 var $elm$svg$Svg$Attributes$display = _VirtualDom_attribute('display');
 var $elm$html$Html$div = _VirtualDom_node('div');
 var $author$project$Main$fg = 'white';
@@ -7087,7 +7075,7 @@ var $author$project$Main$obstacleView = function (obstacle) {
 					$elm$svg$Svg$Attributes$width(
 					$elm$core$String$fromFloat(obstacle.units * $author$project$Main$obstacleUnit)),
 					$elm$svg$Svg$Attributes$height(
-					$elm$core$String$fromFloat($author$project$Main$canvasHeight - ($author$project$Main$runnerSize / 2)))
+					$elm$core$String$fromFloat($author$project$Main$canvasHeight - 0.5))
 				]),
 			_List_Nil);
 	}
