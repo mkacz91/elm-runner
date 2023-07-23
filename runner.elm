@@ -593,6 +593,10 @@ view model =
   Html.div
     [ Html.Attributes.style "pointer-events" "none"
     , Html.Attributes.style "user-select" "none"
+    , Html.Attributes.style "-webkit-user-select" "none"
+    , Html.Attributes.style "-moz-user-select" "none"
+    , Html.Attributes.style "-ms-user-select" "none"
+    , Html.Attributes.style "-khtml-user-select" "none"
     ]
     [ Html.div
         [ Html.Attributes.style "color" bg

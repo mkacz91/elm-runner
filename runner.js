@@ -7113,7 +7113,11 @@ var $author$project$Main$view = function (model) {
 		_List_fromArray(
 			[
 				A2($elm$html$Html$Attributes$style, 'pointer-events', 'none'),
-				A2($elm$html$Html$Attributes$style, 'user-select', 'none')
+				A2($elm$html$Html$Attributes$style, 'user-select', 'none'),
+				A2($elm$html$Html$Attributes$style, '-webkit-user-select', 'none'),
+				A2($elm$html$Html$Attributes$style, '-moz-user-select', 'none'),
+				A2($elm$html$Html$Attributes$style, '-ms-user-select', 'none'),
+				A2($elm$html$Html$Attributes$style, '-khtml-user-select', 'none')
 			]),
 		_List_fromArray(
 			[
