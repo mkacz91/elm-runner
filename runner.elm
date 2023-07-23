@@ -28,13 +28,12 @@ fg = "white"
 runnerSize = 20.0
 runnerX = 200.0
 jumpHeight = 50.0
-jumpDuration = 0.6
-dimTransitionDuration = 0.1
+jumpDistance = 120.0
+dimTransitionDistance = 20.0
 speed = 200.0
 obstacleUnit = 30.0
 minObstacleDistance = 70.0
 obstacleMargin = 5
-pauseMargin = 1.0
 maxSpikeUnits = 3
 maxHoleUnits = 5
 
@@ -96,7 +95,7 @@ applyTick posix model =
     millis = posixToMillis posix
     input =
       { oldInput
-      | time = toFloat (millis - model.startMillis) / 1000
+      | distance = toFloat (millis - model.startMillis) * speed / 1000.0
       }
   in
     { model
@@ -150,14 +149,14 @@ setGameState state model =
     { model
     | state = state
     , startMillis = model.millis
-    , input = { oldInput | time = 0 }
+    , input = { oldInput | distance = 0 }
     }
 
 type alias Input =
   { jump: Bool
   , slide: Bool
   , keys: Set String
-  , time: Float
+  , distance: Float
   }
 
 
@@ -178,7 +177,7 @@ type alias Runner =
   , h : Float
   , angle : Float
   , dimSnapshot : (Float, Float)
-  , snapshotTime : Float
+  , snapshotDistance : Float
   }
 
 {-| Default runner model instance. -}
@@ -191,7 +190,7 @@ initialRunner
     h = runnerSize,
     angle = 0,
     dimSnapshot = (runnerSize, runnerSize),
-    snapshotTime = 0
+    snapshotDistance = 0
   }
 
 {-| Advance the runner a step forward according to received input. -}
@@ -202,7 +201,7 @@ runnerStep input runner = cmdless <|
       { runner
       | state = state
       , dimSnapshot = (runner.w, runner.h)
-      , snapshotTime = input.time
+      , snapshotDistance = input.distance
       }
   in
     if input.jump && runner.state /= Jumping then
@@ -223,44 +222,44 @@ place and the runner is in `Jumping` state. -}
 jumpStep : Input -> Runner -> Runner
 jumpStep input runner =
   let
-    dt = input.time - runner.snapshotTime
-    d = jumpDuration
+    ds = input.distance - runner.snapshotDistance
+    d = jumpDistance
     h = jumpHeight
     a = 4 * h / (d * d)
   in
-    if d <= dt then
+    if d <= ds then
       { runner
-      |  state = Running
-      ,  y = 0
-      ,  angle = 0
-      ,  dimSnapshot = (runnerSize, runnerSize)
-      ,  snapshotTime = input.time
+      | state = Running
+      , y = 0
+      , angle = 0
+      , dimSnapshot = (runnerSize, runnerSize)
+      , snapshotDistance = input.distance
       }
     else
       { runner
-      | y = a * dt * (d - dt)
-      , angle = dt / d * 90
+      | y = a * ds * (d - ds)
+      , angle = ds / d * 90
       }
-      |> dimTransition input dimTransitionDuration runnerSize runnerSize
+      |> dimTransition input runnerSize runnerSize
 
 {-| A subroutine of `runnerStep`, called when no state transition has taken
 place and the runner is in `Sliding` state. -}
 slideStep : Input -> Runner -> Runner
 slideStep input =
-  dimTransition input dimTransitionDuration (2 * runnerSize) (runnerSize / 2)
+  dimTransition input (2 * runnerSize) (runnerSize / 2)
 
 {-| A subroutine of `runnerStep`, called when no state transition has taken
 place and the runner is in `Running` state. -}
 runStep : Input -> Runner -> Runner
 runStep input =
-  dimTransition input dimTransitionDuration runnerSize runnerSize
+  dimTransition input runnerSize runnerSize
 
 {-| Animates the change in runner dimenstions. -}
-dimTransition : Input -> Float -> Float -> Float -> Runner -> Runner
-dimTransition input duration w h runner =
+dimTransition : Input -> Float -> Float -> Runner -> Runner
+dimTransition input w h runner =
   let
-    dt = input.time - runner.snapshotTime
-    alpha = (min duration dt) / duration
+    ds = input.distance - runner.snapshotDistance
+    alpha = (min dimTransitionDistance ds) / dimTransitionDistance
     (w0, h0) = runner.dimSnapshot
   in
     { runner
@@ -282,7 +281,7 @@ type ObstacleKind = Spikes | Hole
 type alias Obstacle
   = {
     kind : ObstacleKind,
-    spawnTime : Float,
+    spawnDistance : Float,
     x : Float,
     units : Int
   }
@@ -298,13 +297,13 @@ initialTrack =
   { obstacles = []
   }
 
-{-| Move obstacles toward the runner according to the elapsed time. -}
+{-| Move obstacles toward the runner. -}
 advanceObstacles : Input -> Track -> Track
 advanceObstacles input track =
   let
     aux obstacle =
       { obstacle
-      | x = canvasRight - (input.time - obstacle.spawnTime) * speed
+      | x = canvasRight - (input.distance - obstacle.spawnDistance)
       }
   in
     { track | obstacles = List.map aux track.obstacles }
@@ -330,8 +329,8 @@ maybeSpawnObstacle input track = Tuple.pair track <|
   in
     if x0 - xMax >= minObstacleDistance then
       let
-        t = input.time
-        spawnTimeGenerator = Random.float t (t + minObstacleDistance / speed)
+        s = input.distance
+        spawnDistanceGenerator = Random.float s (s + minObstacleDistance)
         obstackeKindGenerator = Random.weighted (3, Spikes) [(1, Hole)]
         unitGenerator kind =
           Random.int 1 <|
@@ -342,14 +341,14 @@ maybeSpawnObstacle input track = Tuple.pair track <|
           obstackeKindGenerator
           |> Random.andThen
             (\kind -> Random.map2
-              (\spawnTime units ->
+              (\spawnDistance units ->
                 { kind = kind
-                , spawnTime = spawnTime
+                , spawnDistance = spawnDistance
                 , x = x0
                 , units = units 
                 }
               )
-              spawnTimeGenerator
+              spawnDistanceGenerator
               (unitGenerator kind)
             )
       in
@@ -393,7 +392,7 @@ initialModel =
     { jump = False
     , slide = False
     , keys = Set.empty
-    , time = 0
+    , distance = 0
     }
   , runner = initialRunner
   , track = initialTrack
@@ -412,7 +411,7 @@ step model =
 {-| Subroutine of `step`, called when the game is in the `Paused` state. -}
 pausedStep : Model -> (Model, Cmd Msg)
 pausedStep model = cmdless <|
-  if Set.isEmpty(model.input.keys) || model.input.time < pauseMargin then
+  if Set.isEmpty(model.input.keys) || (model.millis - model.startMillis) < 1000 then
     model
   else
     { model
@@ -432,7 +431,7 @@ playingStep model =
     ( { model
       | runner = runner
       , track = track
-      , score = floor (model.input.time * 10)
+      , score = floor (model.input.distance / 20.0)
       }
       |> collisions
     , Cmd.batch [runnerCmd, trackCmd]
