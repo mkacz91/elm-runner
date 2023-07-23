@@ -181,15 +181,14 @@ type alias Runner =
 
 {-| Default runner model instance. -}
 initialRunner : Runner
-initialRunner
-  = {
-    state = Running,
-    y = 0.0,
-    w = 1.0,
-    h = 1.0,
-    angle = 0,
-    dimSnapshot = (1.0, 1.0),
-    snapshotDistance = 0
+initialRunner =
+  { state = Running
+  , y = 0.0
+  , w = 1.0
+  , h = 1.0
+  , angle = 0
+  , dimSnapshot = (1.0, 1.0)
+  , snapshotDistance = 0
   }
 
 setRunnerState : Input -> RunnerState -> Runner -> Runner
@@ -434,24 +433,29 @@ playingStep model =
     )
 
 {-| Check wether the runner collides with an obstacle. -}
-collides : Runner -> Obstacle -> Bool
-collides runner obstacle =
+collides : Runner -> Input -> Obstacle -> Bool
+collides runner input obstacle =
   let
     x0 = obstacle.x - runner.w / 2 + obstacleMargin
-    x1 = obstacle.x + toFloat(obstacle.units) * obstacleUnit
+    x1 = obstacle.x + toFloat obstacle.units  * obstacleUnit
        + runner.w / 2 - obstacleMargin
-    x = 0
-    y = runner.y
-    h = runner.h
+    overlapsX x = x0 < x && x < x1
   in case obstacle.kind of
-    Spikes -> y < spikeH - obstacleMargin && y < -sqrt3 * x0 && y < sqrt3 * x1
-    Hole -> x0 < 0 && 0 < x1 && h > 0.5
+    Hole -> overlapsX 0 && runner.h > 0.5
+    Spikes ->
+      if runner.state /= Jumping then
+        overlapsX 0
+      else if input.distance >= runner.snapshotDistance + 0.5 * jumpDistance then
+        overlapsX (jumpDistance - input.distance + runner.snapshotDistance)
+          && runner.y < spikeH - obstacleMargin
+      else
+        False
 
 {-| Handle failure contition. If the runner collides with any obstacle, returns
 to the title screen. -}
 collisions : Model -> Model
 collisions model =
-  if any (collides model.runner) model.track.obstacles then
+  if any (collides model.runner model.input) model.track.obstacles then
     setGameState Paused model
   else
     model
