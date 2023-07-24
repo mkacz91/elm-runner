@@ -65,13 +65,6 @@ dropWhile f xs = case xs of
   x :: xs_ -> if f x then dropWhile f xs_ else xs
   [] -> []
 
-{-| Retrieve the last element of a list. -}
-last : List a -> Maybe a
-last xs = case xs of
-  [] -> Nothing
-  [x] -> Just x
-  _ :: xs_ -> last xs_
-
 {-| Utility function for producing a commandless tuple. -}
 cmdless : a -> (a, Cmd msg)
 cmdless x = (x, Cmd.none)
@@ -138,7 +131,13 @@ applySpawnObstacle : Obstacle -> Model -> (Model, Cmd Msg)
 applySpawnObstacle obstacle model = cmdless <|
   let oldTrack = model.track in
   { model
-  | track = { oldTrack | obstacles = oldTrack.obstacles ++ [obstacle] }
+  | track =
+    { oldTrack
+    | obstacles = oldTrack.obstacles ++ [obstacle]
+    , nonHoleStride = if obstacle.kind /= Hole
+        then oldTrack.nonHoleStride + 1
+        else 0
+    }
   }
 
 setGameState : GameState -> Model -> Model
@@ -283,12 +282,14 @@ type alias Obstacle
 {-| Track model. -}
 type alias Track =
   { obstacles : List Obstacle
+  , nonHoleStride : Int
   }
 
 {-| Default track model instance. -}
 initialTrack : Track
 initialTrack =
   { obstacles = []
+  , nonHoleStride = 0
   }
 
 {-| Move obstacles toward the runner. -}
@@ -331,7 +332,16 @@ maybeSpawnObstacle input track = Tuple.pair track <|
     -- Asymptotic fall from 5 to 1.7. Around 3.7 at distance 500.
     gap = (5.0 - 1.7) * e^(-s / 1000.0) + 1.7
     spawnDistanceGenerator = Random.float (s + gap) (s + 2 * gap)
-    obstackeKindGenerator = Random.weighted (3, Spikes) [(1, Hole)]
+    -- Linear fall from 5 by 1 every 500 units. Not under 1.
+    requiredNonHoleStride = max 1 (ceiling (4 - s / 500.0))
+    -- Asymptotic rise from 0.3 to 0.95. Around 0.5 at distance 1000, 0.7 at 3k.  
+    allowedHoleProbability = 0.95 - 0.65 / (s / 1800.0 + 1.0)
+    holeProbability = if track.nonHoleStride >= requiredNonHoleStride
+      then allowedHoleProbability
+      else 0
+    obstackeKindGenerator = Random.weighted
+      (1.0 - holeProbability, Spikes)
+      [(holeProbability, Hole)]
     unitGenerator kind =
       Random.int 1 <|
       case kind of
@@ -609,7 +619,6 @@ view model =
     , Html.div
         [ Html.Attributes.style "background-color" bg
         , Html.Attributes.style "position" "relative"
-        , Html.Attributes.style "margin-bottom" "6vw"
         ]
         [ svg
             [ Svg.Attributes.display "block"
@@ -632,6 +641,12 @@ view model =
             ]
             (if model.state == Paused then [pausedView] else [])
         ]
+        , Html.div
+            [ Html.Attributes.style "font-size" "1.5vw"
+            , Html.Attributes.style "text-align" "right"
+            , Html.Attributes.style "margin-bottom" "6vw"
+            ]
+            [ Html.text "v0.1" ]
       ]
 
 {-| The entry point of the application -}

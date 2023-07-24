@@ -5259,7 +5259,7 @@ var $author$project$Main$initialRunner = {
 	w: 1.0,
 	y: 0.0
 };
-var $author$project$Main$initialTrack = {obstacles: _List_Nil};
+var $author$project$Main$initialTrack = {nonHoleStride: 0, obstacles: _List_Nil};
 var $author$project$Main$initialModel = {
 	input: {distance: 0, jump: false, keys: $elm$core$Set$empty, slide: false},
 	millis: 0,
@@ -6278,6 +6278,8 @@ var $author$project$Main$applyKey = F3(
 					{input: input});
 			}());
 	});
+var $author$project$Main$Hole = {$: 'Hole'};
+var $elm$core$Basics$neq = _Utils_notEqual;
 var $author$project$Main$applySpawnObstacle = F2(
 	function (obstacle, model) {
 		return $author$project$Main$cmdless(
@@ -6289,6 +6291,7 @@ var $author$project$Main$applySpawnObstacle = F2(
 						track: _Utils_update(
 							oldTrack,
 							{
+								nonHoleStride: (!_Utils_eq(obstacle.kind, $author$project$Main$Hole)) ? (oldTrack.nonHoleStride + 1) : 0,
 								obstacles: _Utils_ap(
 									oldTrack.obstacles,
 									_List_fromArray(
@@ -6360,7 +6363,6 @@ var $elm$core$List$any = F2(
 var $author$project$Main$Jumping = {$: 'Jumping'};
 var $elm$core$Basics$ge = _Utils_ge;
 var $author$project$Main$jumpDistance = 6.0;
-var $elm$core$Basics$neq = _Utils_notEqual;
 var $author$project$Main$obstacleMargin = 0.25;
 var $author$project$Main$obstacleUnit = 1.5;
 var $elm$core$Basics$sqrt = _Basics_sqrt;
@@ -6515,7 +6517,6 @@ var $author$project$Main$dropInvisibleObstacles = function (track) {
 			obstacles: A2($author$project$Main$dropWhile, aux, track.obstacles)
 		});
 };
-var $author$project$Main$Hole = {$: 'Hole'};
 var $author$project$Main$SpawnObstacle = function (a) {
 	return {$: 'SpawnObstacle', a: a};
 };
@@ -6790,15 +6791,21 @@ var $author$project$Main$maybeSpawnObstacle = F2(
 							}());
 					};
 					var s = input.distance;
-					var obstackeKindGenerator = A2(
-						$elm$random$Random$weighted,
-						_Utils_Tuple2(3, $author$project$Main$Spikes),
-						_List_fromArray(
-							[
-								_Utils_Tuple2(1, $author$project$Main$Hole)
-							]));
+					var requiredNonHoleStride = A2(
+						$elm$core$Basics$max,
+						1,
+						$elm$core$Basics$ceiling(4 - (s / 500.0)));
 					var gap = ((5.0 - 1.7) * A2($elm$core$Basics$pow, $elm$core$Basics$e, (-s) / 1000.0)) + 1.7;
 					var spawnDistanceGenerator = A2($elm$random$Random$float, s + gap, s + (2 * gap));
+					var allowedHoleProbability = 0.95 - (0.65 / ((s / 1800.0) + 1.0));
+					var holeProbability = (_Utils_cmp(track.nonHoleStride, requiredNonHoleStride) > -1) ? allowedHoleProbability : 0;
+					var obstackeKindGenerator = A2(
+						$elm$random$Random$weighted,
+						_Utils_Tuple2(1.0 - holeProbability, $author$project$Main$Spikes),
+						_List_fromArray(
+							[
+								_Utils_Tuple2(holeProbability, $author$project$Main$Hole)
+							]));
 					var obstacleGenerator = A2(
 						$elm$random$Random$andThen,
 						function (kind) {
@@ -7127,8 +7134,7 @@ var $author$project$Main$view = function (model) {
 				_List_fromArray(
 					[
 						A2($elm$html$Html$Attributes$style, 'background-color', $author$project$Main$bg),
-						A2($elm$html$Html$Attributes$style, 'position', 'relative'),
-						A2($elm$html$Html$Attributes$style, 'margin-bottom', '6vw')
+						A2($elm$html$Html$Attributes$style, 'position', 'relative')
 					]),
 				_List_fromArray(
 					[
@@ -7155,6 +7161,18 @@ var $author$project$Main$view = function (model) {
 							]),
 						_Utils_eq(model.state, $author$project$Main$Paused) ? _List_fromArray(
 							[$author$project$Main$pausedView]) : _List_Nil)
+					])),
+				A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'font-size', '1.5vw'),
+						A2($elm$html$Html$Attributes$style, 'text-align', 'right'),
+						A2($elm$html$Html$Attributes$style, 'margin-bottom', '6vw')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text('v0.1')
 					]))
 			]));
 };
