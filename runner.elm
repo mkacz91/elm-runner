@@ -619,7 +619,6 @@ view model =
     , Html.div
         [ Html.Attributes.style "background-color" bg
         , Html.Attributes.style "position" "relative"
-        , Html.Attributes.style "margin-bottom" "6vw"
         ]
         [ svg
             [ Svg.Attributes.display "block"
@@ -642,6 +641,12 @@ view model =
             ]
             (if model.state == Paused then [pausedView] else [])
         ]
+        , Html.div
+            [ Html.Attributes.style "font-size" "1.5vw"
+            , Html.Attributes.style "text-align" "right"
+            , Html.Attributes.style "margin-bottom" "6vw"
+            ]
+            [ Html.text "v0.1" ]
       ]
 
 {-| The entry point of the application -}
