@@ -20,6 +20,8 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
+version = "v0.2.1"
+
 canvasWidth = 30
 canvasHeight = 6
 bg = "rgb(32, 74, 135)"
@@ -78,6 +80,7 @@ type Msg
   | Key Bool String
   | Touch String
   | SpawnObstacle Obstacle
+  | HighScore Int
 
 applyTick : Time.Posix -> Model -> (Model, Cmd Msg)
 applyTick posix model =
@@ -140,6 +143,9 @@ applySpawnObstacle obstacle model = cmdless <|
     }
   }
 
+applyHighScore : Int -> Model -> (Model, Cmd Msg)
+applyHighScore score model = cmdless <| { model | highScore = score }
+
 setGameState : GameState -> Model -> Model
 setGameState state model =
   let oldInput = model.input in
@@ -156,6 +162,9 @@ type alias Input =
   , distance: Float
   }
 
+port announceVersion : String -> Cmd msg
+port announceScore : Int -> Cmd msg
+port onHighScore : (Int -> msg) -> Sub msg
 
 --------------------------------------------------------------------------------
 -- Runner
@@ -397,6 +406,7 @@ type alias Model =
   , millis : Int
   , startMillis : Int
   , score : Int
+  , highScore : Int
   }
 
 {-| Default application model instance. -}
@@ -413,6 +423,7 @@ initialModel =
   , millis = 0
   , startMillis = 0
   , score = 0
+  , highScore = 0
   }
 
 {-| Advance the game by a single step according to received input. -}
@@ -441,14 +452,15 @@ playingStep model =
   let
     (runner, runnerCmd) = runnerStep model.input model.runner
     (track, trackCmd) = trackStep model.input model.track
+    score = floor model.input.distance
   in
     ( { model
       | runner = runner
       , track = track
-      , score = floor model.input.distance
+      , score = score
       }
       |> collisions
-    , Cmd.batch [runnerCmd, trackCmd]
+    , Cmd.batch [runnerCmd, trackCmd, announceScore score]
     )
 
 {-| Check wether the runner collides with an obstacle. -}
@@ -480,7 +492,7 @@ collisions model =
     model
 
 init : () -> (Model, Cmd Msg)
-init _ = (initialModel, Cmd.none)
+init _ = (initialModel, announceVersion version)
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -489,6 +501,7 @@ update msg model =
     Touch touch -> applyTouch touch model
     Tick posix -> applyTick posix model
     SpawnObstacle obstacle -> applySpawnObstacle obstacle model
+    HighScore score -> applyHighScore score model
 
 port onTouch : (String -> msg) -> Sub msg
 
@@ -499,6 +512,7 @@ subscriptions model =
     , Browser.Events.onKeyUp (keyDecoder False)
     , Browser.Events.onAnimationFrame Tick
     , onTouch Touch
+    , onHighScore HighScore
     ]
 
 --------------------------------------------------------------------------------
@@ -620,8 +634,14 @@ view model =
         [ Html.Attributes.style "color" bg
         , Html.Attributes.style "font-size" "3vw"
         , Html.Attributes.style "margin" "1vw"
+        , Html.Attributes.style "display" "flex"
+        , Html.Attributes.style "justify-content" "space-between"
         ]
-        [ Html.text ("Score: " ++ (String.fromInt model.score)) ]
+        [ Html.span []
+            [ Html.text ("Score: " ++ (String.fromInt model.score)) ] 
+        , Html.span []
+            [ Html.text ("High score: " ++ (String.fromInt model.highScore)) ]
+        ]
     , Html.div
         [ Html.Attributes.style "background-color" bg
         , Html.Attributes.style "position" "relative"
@@ -653,7 +673,7 @@ view model =
             , Html.Attributes.style "margin-bottom" "6vw"
             , Html.Attributes.style "margin-right" "0.5vw"
             ]
-            [ Html.text "v0.2.0" ]
+            [ Html.text version ]
       ]
 
 {-| The entry point of the application -}
