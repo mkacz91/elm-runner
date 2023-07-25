@@ -329,6 +329,7 @@ maybeSpawnObstacle input track = Tuple.pair track <|
   in if xc > canvasRight then Cmd.none else
   let
     s = input.distance
+    is = floor s
     -- Asymptotic fall from 5 to 1.7. Around 3.7 at distance 500.
     gap = (5.0 - 1.7) * e^(-s / 1000.0) + 1.7
     spawnDistanceGenerator = Random.float (s + gap) (s + 2 * gap)
@@ -343,10 +344,15 @@ maybeSpawnObstacle input track = Tuple.pair track <|
       (1.0 - holeProbability, Spikes)
       [(holeProbability, Hole)]
     unitGenerator kind =
-      Random.int 1 <|
       case kind of
-        Spikes -> maxSpikeUnits
-        Hole -> maxHoleUnits
+        Hole -> Random.int 1 maxHoleUnits
+        Spikes ->
+          let
+            w1 = toFloat <| 1 + clamp 0 2 (ceiling ((s - 1100) / 300.0))
+            w2 = toFloat <| clamp 0 2 (floor (s / 300.0))
+            w3 = toFloat <| clamp 0 4 (ceiling ((s - 800.0) / 300.0))
+          in
+            Random.weighted (w1, 1) [(w2, 2), (w3, 3)]
     obstacleGenerator =
       obstackeKindGenerator
       |> Random.andThen
@@ -645,8 +651,9 @@ view model =
             [ Html.Attributes.style "font-size" "1.5vw"
             , Html.Attributes.style "text-align" "right"
             , Html.Attributes.style "margin-bottom" "6vw"
+            , Html.Attributes.style "margin-right" "0.5vw"
             ]
-            [ Html.text "v0.1" ]
+            [ Html.text "v0.2.0" ]
       ]
 
 {-| The entry point of the application -}
