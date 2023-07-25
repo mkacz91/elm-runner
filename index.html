@@ -39,6 +39,45 @@
       node: document.getElementById('myapp')
     });
 
+    var highScoreKey = undefined;
+
+    function readHighScore() {
+      if (!highScoreKey) {
+        console.log("highScoreKey is not set");
+        return;
+      }
+      let highScore = parseInt(localStorage.getItem(highScoreKey));
+      if (!isFinite(highScore)) {
+        highScore = 0;
+      }
+      return highScore;
+    }
+
+    function writeHighScoreIfGreater(highScore) {
+      if (!highScoreKey) {
+        console.log("highScoreKey is not set");
+        return;
+      }
+      const currentHighScore = readHighScore();
+      if (highScore > currentHighScore) {
+        localStorage.setItem(highScoreKey, highScore);
+        return highScore;
+      } else {
+        return currentHighScore;
+      }
+    }
+
+    app.ports.announceVersion.subscribe(function (v) {
+      console.log("Elm Runner version:", v);
+      version = v;
+      highScoreKey = "elmRunner_highScore_" + v.substr(0, v.lastIndexOf('.'));
+      app.ports.onHighScore.send(readHighScore());
+    });
+
+    app.ports.announceScore.subscribe(function (highScore) {
+      app.ports.onHighScore.send(writeHighScoreIfGreater(highScore));
+    });
+
     function touchHandler(e) {
       var isLeftTouched = false;
       var isRightTouched = false;
@@ -56,6 +95,8 @@
     window.addEventListener('touchmove', touchHandler);
     window.addEventListener('touchend', touchHandler);
     window.addEventListener('touchcancel', touchHandler);
+
+
   </script>
 </body>
 </html>

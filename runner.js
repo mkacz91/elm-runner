@@ -5242,6 +5242,8 @@ var $elm$core$Task$perform = F2(
 				A2($elm$core$Task$map, toMessage, task)));
 	});
 var $elm$browser$Browser$element = _Browser_element;
+var $elm$json$Json$Encode$string = _Json_wrap;
+var $author$project$Main$announceVersion = _Platform_outgoingPort('announceVersion', $elm$json$Json$Encode$string);
 var $author$project$Main$Paused = {$: 'Paused'};
 var $elm$core$Set$Set_elm_builtin = function (a) {
 	return {$: 'Set_elm_builtin', a: a};
@@ -5261,6 +5263,7 @@ var $author$project$Main$initialRunner = {
 };
 var $author$project$Main$initialTrack = {nonHoleStride: 0, obstacles: _List_Nil};
 var $author$project$Main$initialModel = {
+	highScore: 0,
 	input: {distance: 0, jump: false, keys: $elm$core$Set$empty, slide: false},
 	millis: 0,
 	runner: $author$project$Main$initialRunner,
@@ -5269,10 +5272,14 @@ var $author$project$Main$initialModel = {
 	state: $author$project$Main$Paused,
 	track: $author$project$Main$initialTrack
 };
-var $elm$core$Platform$Cmd$batch = _Platform_batch;
-var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
+var $author$project$Main$version = 'v0.2.1';
 var $author$project$Main$init = function (_v0) {
-	return _Utils_Tuple2($author$project$Main$initialModel, $elm$core$Platform$Cmd$none);
+	return _Utils_Tuple2(
+		$author$project$Main$initialModel,
+		$author$project$Main$announceVersion($author$project$Main$version));
+};
+var $author$project$Main$HighScore = function (a) {
+	return {$: 'HighScore', a: a};
 };
 var $author$project$Main$Tick = function (a) {
 	return {$: 'Tick', a: a};
@@ -5427,6 +5434,8 @@ var $elm$browser$Browser$AnimationManager$onAnimationFrame = function (tagger) {
 		$elm$browser$Browser$AnimationManager$Time(tagger));
 };
 var $elm$browser$Browser$Events$onAnimationFrame = $elm$browser$Browser$AnimationManager$onAnimationFrame;
+var $elm$json$Json$Decode$int = _Json_decodeInt;
+var $author$project$Main$onHighScore = _Platform_incomingPort('onHighScore', $elm$json$Json$Decode$int);
 var $elm$browser$Browser$Events$Document = {$: 'Document'};
 var $elm$browser$Browser$Events$MySub = F3(
 	function (a, b, c) {
@@ -5835,12 +5844,22 @@ var $author$project$Main$subscriptions = function (model) {
 				$elm$browser$Browser$Events$onKeyUp(
 				$author$project$Main$keyDecoder(false)),
 				$elm$browser$Browser$Events$onAnimationFrame($author$project$Main$Tick),
-				$author$project$Main$onTouch($author$project$Main$Touch)
+				$author$project$Main$onTouch($author$project$Main$Touch),
+				$author$project$Main$onHighScore($author$project$Main$HighScore)
 			]));
 };
+var $elm$core$Platform$Cmd$batch = _Platform_batch;
+var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
 var $author$project$Main$cmdless = function (x) {
 	return _Utils_Tuple2(x, $elm$core$Platform$Cmd$none);
 };
+var $author$project$Main$applyHighScore = F2(
+	function (score, model) {
+		return $author$project$Main$cmdless(
+			_Utils_update(
+				model,
+				{highScore: score}));
+	});
 var $elm$core$Set$insert = F2(
 	function (key, _v0) {
 		var dict = _v0.a;
@@ -6339,6 +6358,8 @@ var $author$project$Main$pausedStep = function (model) {
 				model,
 				{runner: $author$project$Main$initialRunner, score: 0, track: $author$project$Main$initialTrack})));
 };
+var $elm$json$Json$Encode$int = _Json_wrap;
+var $author$project$Main$announceScore = _Platform_outgoingPort('announceScore', $elm$json$Json$Encode$int);
 var $elm$core$List$any = F2(
 	function (isOkay, list) {
 		any:
@@ -6537,6 +6558,10 @@ var $elm$random$Random$andThen = F2(
 				return genB(newSeed);
 			});
 	});
+var $elm$core$Basics$clamp = F3(
+	function (low, high, number) {
+		return (_Utils_cmp(number, low) < 0) ? low : ((_Utils_cmp(number, high) > 0) ? high : number);
+	});
 var $elm$core$Basics$e = _Basics_e;
 var $elm$core$Bitwise$and = _Bitwise_and;
 var $elm$random$Random$Seed = F2(
@@ -6708,7 +6733,6 @@ var $elm$random$Random$map2 = F3(
 			});
 	});
 var $author$project$Main$maxHoleUnits = 5;
-var $author$project$Main$maxSpikeUnits = 3;
 var $author$project$Main$optimalClearX = F2(
 	function (obstacle, x0) {
 		var obstacleW = obstacle.units * $author$project$Main$obstacleUnit;
@@ -6778,23 +6802,41 @@ var $author$project$Main$maybeSpawnObstacle = F2(
 				if (_Utils_cmp(xc, $author$project$Main$canvasRight) > 0) {
 					return $elm$core$Platform$Cmd$none;
 				} else {
-					var unitGenerator = function (kind) {
-						return A2(
-							$elm$random$Random$int,
-							1,
-							function () {
-								if (kind.$ === 'Spikes') {
-									return $author$project$Main$maxSpikeUnits;
-								} else {
-									return $author$project$Main$maxHoleUnits;
-								}
-							}());
-					};
 					var s = input.distance;
+					var unitGenerator = function (kind) {
+						if (kind.$ === 'Hole') {
+							return A2($elm$random$Random$int, 1, $author$project$Main$maxHoleUnits);
+						} else {
+							var w3 = A3(
+								$elm$core$Basics$clamp,
+								0,
+								4,
+								$elm$core$Basics$ceiling((s - 800.0) / 300.0));
+							var w2 = A3(
+								$elm$core$Basics$clamp,
+								0,
+								2,
+								$elm$core$Basics$floor(s / 300.0));
+							var w1 = 1 + A3(
+								$elm$core$Basics$clamp,
+								0,
+								2,
+								$elm$core$Basics$ceiling((s - 1100) / 300.0));
+							return A2(
+								$elm$random$Random$weighted,
+								_Utils_Tuple2(w1, 1),
+								_List_fromArray(
+									[
+										_Utils_Tuple2(w2, 2),
+										_Utils_Tuple2(w3, 3)
+									]));
+						}
+					};
 					var requiredNonHoleStride = A2(
 						$elm$core$Basics$max,
 						1,
 						$elm$core$Basics$ceiling(4 - (s / 500.0)));
+					var is = $elm$core$Basics$floor(s);
 					var gap = ((5.0 - 1.7) * A2($elm$core$Basics$pow, $elm$core$Basics$e, (-s) / 1000.0)) + 1.7;
 					var spawnDistanceGenerator = A2($elm$random$Random$float, s + gap, s + (2 * gap));
 					var allowedHoleProbability = 0.95 - (0.65 / ((s / 1800.0) + 1.0));
@@ -6832,6 +6874,7 @@ var $author$project$Main$trackStep = F2(
 				A2($author$project$Main$advanceObstacles, input, track)));
 	});
 var $author$project$Main$playingStep = function (model) {
+	var score = $elm$core$Basics$floor(model.input.distance);
 	var _v0 = A2($author$project$Main$trackStep, model.input, model.track);
 	var track = _v0.a;
 	var trackCmd = _v0.b;
@@ -6842,14 +6885,14 @@ var $author$project$Main$playingStep = function (model) {
 		$author$project$Main$collisions(
 			_Utils_update(
 				model,
-				{
-					runner: runner,
-					score: $elm$core$Basics$floor(model.input.distance),
-					track: track
-				})),
+				{runner: runner, score: score, track: track})),
 		$elm$core$Platform$Cmd$batch(
 			_List_fromArray(
-				[runnerCmd, trackCmd])));
+				[
+					runnerCmd,
+					trackCmd,
+					$author$project$Main$announceScore(score)
+				])));
 };
 var $author$project$Main$step = function (model) {
 	var _v0 = model.state;
@@ -6906,9 +6949,12 @@ var $author$project$Main$update = F2(
 			case 'Tick':
 				var posix = msg.a;
 				return A2($author$project$Main$applyTick, posix, model);
-			default:
+			case 'SpawnObstacle':
 				var obstacle = msg.a;
 				return A2($author$project$Main$applySpawnObstacle, obstacle, model);
+			default:
+				var score = msg.a;
+				return A2($author$project$Main$applyHighScore, score, model);
 		}
 	});
 var $author$project$Main$bg = 'rgb(32, 74, 135)';
@@ -7100,6 +7146,7 @@ var $author$project$Main$playingView = function (model) {
 			$author$project$Main$trackView(model.track)
 		]);
 };
+var $elm$html$Html$span = _VirtualDom_node('span');
 var $elm$svg$Svg$svg = $elm$svg$Svg$trustedNode('svg');
 var $elm$svg$Svg$Attributes$viewBox = _VirtualDom_attribute('viewBox');
 var $author$project$Main$view = function (model) {
@@ -7122,12 +7169,28 @@ var $author$project$Main$view = function (model) {
 					[
 						A2($elm$html$Html$Attributes$style, 'color', $author$project$Main$bg),
 						A2($elm$html$Html$Attributes$style, 'font-size', '3vw'),
-						A2($elm$html$Html$Attributes$style, 'margin', '1vw')
+						A2($elm$html$Html$Attributes$style, 'margin', '1vw'),
+						A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+						A2($elm$html$Html$Attributes$style, 'justify-content', 'space-between')
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(
-						'Score: ' + $elm$core$String$fromInt(model.score))
+						A2(
+						$elm$html$Html$span,
+						_List_Nil,
+						_List_fromArray(
+							[
+								$elm$html$Html$text(
+								'Score: ' + $elm$core$String$fromInt(model.score))
+							])),
+						A2(
+						$elm$html$Html$span,
+						_List_Nil,
+						_List_fromArray(
+							[
+								$elm$html$Html$text(
+								'High score: ' + $elm$core$String$fromInt(model.highScore))
+							]))
 					])),
 				A2(
 				$elm$html$Html$div,
@@ -7168,11 +7231,12 @@ var $author$project$Main$view = function (model) {
 					[
 						A2($elm$html$Html$Attributes$style, 'font-size', '1.5vw'),
 						A2($elm$html$Html$Attributes$style, 'text-align', 'right'),
-						A2($elm$html$Html$Attributes$style, 'margin-bottom', '6vw')
+						A2($elm$html$Html$Attributes$style, 'margin-bottom', '6vw'),
+						A2($elm$html$Html$Attributes$style, 'margin-right', '0.5vw')
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text('v0.1')
+						$elm$html$Html$text($author$project$Main$version)
 					]))
 			]));
 };
