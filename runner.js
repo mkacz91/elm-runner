@@ -5262,17 +5262,66 @@ var $author$project$Main$initialRunner = {
 	y: 0.0
 };
 var $author$project$Main$initialTrack = {nonHoleStride: 0, obstacles: _List_Nil};
-var $author$project$Main$initialModel = {
-	highScore: 0,
-	input: {distance: 0, jump: false, keys: $elm$core$Set$empty, slide: false},
-	millis: 0,
-	runner: $author$project$Main$initialRunner,
-	score: 0,
-	startMillis: 0,
-	state: $author$project$Main$Paused,
-	track: $author$project$Main$initialTrack
+var $author$project$Main$themes = _List_fromArray(
+	[
+		{bg: '#204a87', fg: '#ffffff'},
+		{bg: '#ffffff', fg: '#204a87'},
+		{bg: '#208733', fg: '#ffffff'},
+		{bg: '#ffffff', fg: '#208733'},
+		{bg: '#872046', fg: '#ffffff'},
+		{bg: '#ffffff', fg: '#872046'},
+		{bg: '#f5a70c', fg: '#ffffff'},
+		{bg: '#ffffff', fg: '#f5a70c'},
+		{bg: '#0c71f5', fg: '#ffffff'},
+		{bg: '#ffffff', fg: '#0c71f5'}
+	]);
+var $author$project$Main$activateNextTheme = function (model) {
+	activateNextTheme:
+	while (true) {
+		var _v0 = model.themeQueue;
+		if (!_v0.b) {
+			var $temp$model = _Utils_update(
+				model,
+				{themeQueue: $author$project$Main$themes});
+			model = $temp$model;
+			continue activateNextTheme;
+		} else {
+			var t = _v0.a;
+			var ts = _v0.b;
+			return _Utils_update(
+				model,
+				{theme: t, themeIndex: model.themeIndex + 1, themeQueue: ts});
+		}
+	}
 };
-var $author$project$Main$version = 'v0.2.1';
+var $elm$core$Basics$negate = function (n) {
+	return -n;
+};
+var $author$project$Main$resetTheme = function (model) {
+	return $author$project$Main$activateNextTheme(
+		_Utils_update(
+			model,
+			{
+				theme: {bg: 'magenta', fg: 'cyan'},
+				themeIndex: -1,
+				themeQueue: _List_Nil
+			}));
+};
+var $author$project$Main$initialModel = $author$project$Main$resetTheme(
+	{
+		highScore: 0,
+		input: {distance: 0, jump: false, keys: $elm$core$Set$empty, slide: false},
+		millis: 0,
+		runner: $author$project$Main$initialRunner,
+		score: 0,
+		startMillis: 0,
+		state: $author$project$Main$Paused,
+		theme: {bg: 'magenta', fg: 'cyan'},
+		themeIndex: 0,
+		themeQueue: _List_Nil,
+		track: $author$project$Main$initialTrack
+	});
+var $author$project$Main$version = 'v0.2.2';
 var $author$project$Main$init = function (_v0) {
 	return _Utils_Tuple2(
 		$author$project$Main$initialModel,
@@ -6354,12 +6403,18 @@ var $author$project$Main$pausedStep = function (model) {
 		($elm$core$Set$isEmpty(model.input.keys) || ((model.millis - model.startMillis) < 1000)) ? model : A2(
 			$author$project$Main$setGameState,
 			$author$project$Main$Playing,
-			_Utils_update(
-				model,
-				{runner: $author$project$Main$initialRunner, score: 0, track: $author$project$Main$initialTrack})));
+			$author$project$Main$resetTheme(
+				_Utils_update(
+					model,
+					{runner: $author$project$Main$initialRunner, score: 0, track: $author$project$Main$initialTrack}))));
 };
+var $author$project$Main$Jumping = {$: 'Jumping'};
 var $elm$json$Json$Encode$int = _Json_wrap;
 var $author$project$Main$announceScore = _Platform_outgoingPort('announceScore', $elm$json$Json$Encode$int);
+var $author$project$Main$applyIf = F3(
+	function (cond, f, x) {
+		return cond ? f(x) : x;
+	});
 var $elm$core$List$any = F2(
 	function (isOkay, list) {
 		any:
@@ -6381,7 +6436,6 @@ var $elm$core$List$any = F2(
 			}
 		}
 	});
-var $author$project$Main$Jumping = {$: 'Jumping'};
 var $elm$core$Basics$ge = _Utils_ge;
 var $author$project$Main$jumpDistance = 6.0;
 var $author$project$Main$obstacleMargin = 0.25;
@@ -6410,9 +6464,6 @@ var $author$project$Main$collisions = function (model) {
 		model.track.obstacles) ? A2($author$project$Main$setGameState, $author$project$Main$Paused, model) : model;
 };
 var $author$project$Main$Sliding = {$: 'Sliding'};
-var $elm$core$Basics$negate = function (n) {
-	return -n;
-};
 var $elm$core$Basics$abs = function (n) {
 	return (n < 0) ? (-n) : n;
 };
@@ -6874,6 +6925,7 @@ var $author$project$Main$trackStep = F2(
 				A2($author$project$Main$advanceObstacles, input, track)));
 	});
 var $author$project$Main$playingStep = function (model) {
+	var wasJumping = _Utils_eq(model.runner.state, $author$project$Main$Jumping);
 	var score = $elm$core$Basics$floor(model.input.distance);
 	var _v0 = A2($author$project$Main$trackStep, model.input, model.track);
 	var track = _v0.a;
@@ -6881,11 +6933,17 @@ var $author$project$Main$playingStep = function (model) {
 	var _v1 = A2($author$project$Main$runnerStep, model.input, model.runner);
 	var runner = _v1.a;
 	var runnerCmd = _v1.b;
+	var justLanded = wasJumping && (!_Utils_eq(runner.state, $author$project$Main$Jumping));
+	var shouldActivateNextFrame = justLanded && (_Utils_cmp((score / 400) | 0, model.themeIndex) > 0);
 	return _Utils_Tuple2(
 		$author$project$Main$collisions(
-			_Utils_update(
-				model,
-				{runner: runner, score: score, track: track})),
+			A3(
+				$author$project$Main$applyIf,
+				shouldActivateNextFrame,
+				$author$project$Main$activateNextTheme,
+				_Utils_update(
+					model,
+					{runner: runner, score: score, track: track}))),
 		$elm$core$Platform$Cmd$batch(
 			_List_fromArray(
 				[
@@ -6957,57 +7015,57 @@ var $author$project$Main$update = F2(
 				return A2($author$project$Main$applyHighScore, score, model);
 		}
 	});
-var $author$project$Main$bg = 'rgb(32, 74, 135)';
 var $author$project$Main$canvasHeight = 6;
 var $elm$svg$Svg$Attributes$display = _VirtualDom_attribute('display');
 var $elm$html$Html$div = _VirtualDom_node('div');
-var $author$project$Main$fg = 'white';
 var $elm$svg$Svg$Attributes$fill = _VirtualDom_attribute('fill');
 var $elm$html$Html$br = _VirtualDom_node('br');
 var $elm$virtual_dom$VirtualDom$style = _VirtualDom_style;
 var $elm$html$Html$Attributes$style = $elm$virtual_dom$VirtualDom$style;
 var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Main$pausedView = A2(
-	$elm$html$Html$div,
-	_List_fromArray(
-		[
-			A2($elm$html$Html$Attributes$style, 'display', 'flex'),
-			A2($elm$html$Html$Attributes$style, 'flex-direction', 'column'),
-			A2($elm$html$Html$Attributes$style, 'justify-content', 'center'),
-			A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
-			A2($elm$html$Html$Attributes$style, 'width', '100%'),
-			A2($elm$html$Html$Attributes$style, 'height', '100%'),
-			A2($elm$html$Html$Attributes$style, 'color', $author$project$Main$fg)
-		]),
-	_List_fromArray(
-		[
-			A2(
-			$elm$html$Html$div,
-			_List_fromArray(
-				[
-					A2($elm$html$Html$Attributes$style, 'font-size', '9vw')
-				]),
-			_List_fromArray(
-				[
-					$elm$html$Html$text('Elm Runner')
-				])),
-			A2(
-			$elm$html$Html$div,
-			_List_fromArray(
-				[
-					A2($elm$html$Html$Attributes$style, 'font-size', '2.5vw'),
-					A2($elm$html$Html$Attributes$style, 'text-align', 'center')
-				]),
-			_List_fromArray(
-				[
-					$elm$html$Html$text('KEY UP or TOUCH RIGHT to jump'),
-					A2($elm$html$Html$br, _List_Nil, _List_Nil),
-					$elm$html$Html$text('KEY DOWN or TOUCH LEFT  to crouch'),
-					A2($elm$html$Html$br, _List_Nil, _List_Nil),
-					$elm$html$Html$text('Press anything to start')
-				]))
-		]));
+var $author$project$Main$pausedView = function (model) {
+	return A2(
+		$elm$html$Html$div,
+		_List_fromArray(
+			[
+				A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+				A2($elm$html$Html$Attributes$style, 'flex-direction', 'column'),
+				A2($elm$html$Html$Attributes$style, 'justify-content', 'center'),
+				A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+				A2($elm$html$Html$Attributes$style, 'width', '100%'),
+				A2($elm$html$Html$Attributes$style, 'height', '100%'),
+				A2($elm$html$Html$Attributes$style, 'color', model.theme.fg)
+			]),
+		_List_fromArray(
+			[
+				A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'font-size', '9vw')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text('Elm Runner')
+					])),
+				A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'font-size', '2.5vw'),
+						A2($elm$html$Html$Attributes$style, 'text-align', 'center')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text('KEY UP or TOUCH RIGHT to jump'),
+						A2($elm$html$Html$br, _List_Nil, _List_Nil),
+						$elm$html$Html$text('KEY DOWN or TOUCH LEFT  to crouch'),
+						A2($elm$html$Html$br, _List_Nil, _List_Nil),
+						$elm$html$Html$text('Press anything to start')
+					]))
+			]));
+};
 var $elm$core$String$fromFloat = _String_fromNumber;
 var $elm$svg$Svg$trustedNode = _VirtualDom_nodeNS('http://www.w3.org/2000/svg');
 var $elm$svg$Svg$g = $elm$svg$Svg$trustedNode('g');
@@ -7156,6 +7214,12 @@ var $author$project$Main$view = function (model) {
 			[
 				A2($elm$html$Html$Attributes$style, 'pointer-events', 'none'),
 				A2($elm$html$Html$Attributes$style, 'user-select', 'none'),
+				A2($elm$html$Html$Attributes$style, 'height', '100%'),
+				A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+				A2($elm$html$Html$Attributes$style, 'flex-direction', 'column'),
+				A2($elm$html$Html$Attributes$style, 'justify-content', 'center'),
+				A2($elm$html$Html$Attributes$style, 'background-color', model.theme.fg),
+				A2($elm$html$Html$Attributes$style, 'color', model.theme.bg),
 				A2($elm$html$Html$Attributes$style, '-webkit-user-select', 'none'),
 				A2($elm$html$Html$Attributes$style, '-moz-user-select', 'none'),
 				A2($elm$html$Html$Attributes$style, '-ms-user-select', 'none'),
@@ -7167,7 +7231,6 @@ var $author$project$Main$view = function (model) {
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						A2($elm$html$Html$Attributes$style, 'color', $author$project$Main$bg),
 						A2($elm$html$Html$Attributes$style, 'font-size', '3vw'),
 						A2($elm$html$Html$Attributes$style, 'margin', '1vw'),
 						A2($elm$html$Html$Attributes$style, 'display', 'flex'),
@@ -7196,8 +7259,9 @@ var $author$project$Main$view = function (model) {
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						A2($elm$html$Html$Attributes$style, 'background-color', $author$project$Main$bg),
-						A2($elm$html$Html$Attributes$style, 'position', 'relative')
+						A2($elm$html$Html$Attributes$style, 'background-color', model.theme.bg),
+						A2($elm$html$Html$Attributes$style, 'position', 'relative'),
+						A2($elm$html$Html$Attributes$style, 'transition', '2s background-color')
 					]),
 				_List_fromArray(
 					[
@@ -7209,7 +7273,7 @@ var $author$project$Main$view = function (model) {
 								$elm$svg$Svg$Attributes$width('100%'),
 								$elm$svg$Svg$Attributes$viewBox(
 								'0 0 ' + ($elm$core$String$fromInt($author$project$Main$canvasWidth) + (' ' + $elm$core$String$fromInt($author$project$Main$canvasHeight)))),
-								$elm$svg$Svg$Attributes$fill($author$project$Main$fg)
+								$elm$svg$Svg$Attributes$fill(model.theme.fg)
 							]),
 						_Utils_eq(model.state, $author$project$Main$Playing) ? $author$project$Main$playingView(model) : _List_Nil),
 						A2(
@@ -7223,7 +7287,9 @@ var $author$project$Main$view = function (model) {
 								A2($elm$html$Html$Attributes$style, 'right', '0')
 							]),
 						_Utils_eq(model.state, $author$project$Main$Paused) ? _List_fromArray(
-							[$author$project$Main$pausedView]) : _List_Nil)
+							[
+								$author$project$Main$pausedView(model)
+							]) : _List_Nil)
 					])),
 				A2(
 				$elm$html$Html$div,

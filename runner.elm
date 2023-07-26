@@ -20,12 +20,10 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-version = "v0.2.1"
+version = "v0.2.2"
 
 canvasWidth = 30
 canvasHeight = 6
-bg = "rgb(32, 74, 135)"
-fg = "white"
 
 runnerX = 9.0
 jumpHeight = 2.5
@@ -66,6 +64,10 @@ dropWhile : (a -> Bool) -> List a -> List a
 dropWhile f xs = case xs of
   x :: xs_ -> if f x then dropWhile f xs_ else xs
   [] -> []
+
+{-| Applies a function to a value if a condition is met. -}
+applyIf : Bool -> (a -> a) -> a -> a
+applyIf cond f x = if cond then f x else x
 
 {-| Utility function for producing a commandless tuple. -}
 cmdless : a -> (a, Cmd msg)
@@ -397,6 +399,26 @@ trackStep input track =
 {-| Pissible states of the application. -}
 type GameState = Paused | Playing
 
+{-| Color theme. -}
+type alias Theme =
+  { bg : String
+  , fg : String
+  }
+
+themes : List Theme
+themes =
+  [ { bg = "#204a87", fg = "#ffffff" } -- 0
+  , { bg = "#ffffff", fg = "#204a87" } -- 400
+  , { bg = "#208733", fg = "#ffffff" } -- 800
+  , { bg = "#ffffff", fg = "#208733" } -- 1200
+  , { bg = "#872046", fg = "#ffffff" } -- 1600
+  , { bg = "#ffffff", fg = "#872046" } -- 2000
+  , { bg = "#f5a70c", fg = "#ffffff" } -- 2400
+  , { bg = "#ffffff", fg = "#f5a70c" } -- 2800
+  , { bg = "#0c71f5", fg = "#ffffff" } -- 3200
+  , { bg = "#ffffff", fg = "#0c71f5" } -- 3600
+  ]
+
 {-| Application model. -}
 type alias Model =
   { input : Input
@@ -407,6 +429,9 @@ type alias Model =
   , startMillis : Int
   , score : Int
   , highScore : Int
+  , themeQueue: List Theme
+  , theme: Theme
+  , themeIndex: Int
   }
 
 {-| Default application model instance. -}
@@ -424,7 +449,11 @@ initialModel =
   , startMillis = 0
   , score = 0
   , highScore = 0
+  , themeQueue = []
+  , theme = { bg = "magenta", fg = "cyan" }
+  , themeIndex = 0
   }
+  |> resetTheme
 
 {-| Advance the game by a single step according to received input. -}
 step : Model -> (Model, Cmd Msg)
@@ -444,21 +473,26 @@ pausedStep model = cmdless <|
     , runner = initialRunner
     , score = 0
     }
+    |> resetTheme
     |> setGameState Playing
 
 {-| Subroutine of `step`, called when the game is in the `Playing` state. -}
 playingStep : Model -> (Model, Cmd Msg)
 playingStep model =
   let
+    wasJumping = model.runner.state == Jumping
     (runner, runnerCmd) = runnerStep model.input model.runner
+    justLanded = wasJumping && runner.state /= Jumping
     (track, trackCmd) = trackStep model.input model.track
     score = floor model.input.distance
+    shouldActivateNextFrame = justLanded && score // 400 > model.themeIndex
   in
     ( { model
       | runner = runner
       , track = track
       , score = score
       }
+      |> applyIf shouldActivateNextFrame activateNextTheme
       |> collisions
     , Cmd.batch [runnerCmd, trackCmd, announceScore score]
     )
@@ -490,6 +524,26 @@ collisions model =
     setGameState Paused model
   else
     model
+
+resetTheme : Model -> Model
+resetTheme model =
+  { model
+  | themeQueue = []
+  , theme = { bg = "magenta", fg = "cyan" }
+  , themeIndex = -1
+  }
+  |> activateNextTheme
+
+activateNextTheme : Model -> Model
+activateNextTheme model =
+  case model.themeQueue of
+    [] -> activateNextTheme { model | themeQueue = themes }
+    t :: ts ->
+      { model
+      | themeQueue = ts
+      , theme = t
+      , themeIndex = model.themeIndex + 1 
+      }
 
 init : () -> (Model, Cmd Msg)
 init _ = (initialModel, announceVersion version)
@@ -588,7 +642,8 @@ trackView : Track -> Svg Msg
 trackView track = Svg.g [] (List.map obstacleView track.obstacles)
 
 --{-| Produce the title screen `Html`. -}
-pausedView =
+pausedView : Model -> Html Msg
+pausedView model =
   Html.div
   [ Html.Attributes.style "display" "flex"
   , Html.Attributes.style "flex-direction" "column"
@@ -596,7 +651,7 @@ pausedView =
   , Html.Attributes.style "align-items" "center"
   , Html.Attributes.style "width" "100%"
   , Html.Attributes.style "height" "100%"
-  , Html.Attributes.style "color" fg
+  , Html.Attributes.style "color" model.theme.fg
   ]
   [ Html.div
       [ Html.Attributes.style "font-size" "9vw"]
@@ -625,14 +680,19 @@ view model =
   Html.div
     [ Html.Attributes.style "pointer-events" "none"
     , Html.Attributes.style "user-select" "none"
+    , Html.Attributes.style "height" "100%"
+    , Html.Attributes.style "display" "flex"
+    , Html.Attributes.style "flex-direction" "column"
+    , Html.Attributes.style "justify-content" "center"
+    , Html.Attributes.style "background-color" model.theme.fg
+    , Html.Attributes.style "color" model.theme.bg
     , Html.Attributes.style "-webkit-user-select" "none"
     , Html.Attributes.style "-moz-user-select" "none"
     , Html.Attributes.style "-ms-user-select" "none"
     , Html.Attributes.style "-khtml-user-select" "none"
     ]
     [ Html.div
-        [ Html.Attributes.style "color" bg
-        , Html.Attributes.style "font-size" "3vw"
+        [ Html.Attributes.style "font-size" "3vw"
         , Html.Attributes.style "margin" "1vw"
         , Html.Attributes.style "display" "flex"
         , Html.Attributes.style "justify-content" "space-between"
@@ -643,8 +703,9 @@ view model =
             [ Html.text ("High score: " ++ (String.fromInt model.highScore)) ]
         ]
     , Html.div
-        [ Html.Attributes.style "background-color" bg
+        [ Html.Attributes.style "background-color" model.theme.bg
         , Html.Attributes.style "position" "relative"
+        , Html.Attributes.style "transition" "2s background-color"
         ]
         [ svg
             [ Svg.Attributes.display "block"
@@ -655,7 +716,7 @@ view model =
                 ++ " "
                 ++ (String.fromInt canvasHeight)
                 )
-            , Svg.Attributes.fill fg
+            , Svg.Attributes.fill model.theme.fg
             ]
             (if model.state == Playing then playingView model else [])
         , Html.div
@@ -665,7 +726,7 @@ view model =
             , Html.Attributes.style "bottom" "0"
             , Html.Attributes.style "right" "0"
             ]
-            (if model.state == Paused then [pausedView] else [])
+            (if model.state == Paused then [pausedView model] else [])
         ]
         , Html.div
             [ Html.Attributes.style "font-size" "1.5vw"
