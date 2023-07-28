@@ -5266,12 +5266,12 @@ var $author$project$Main$themes = _List_fromArray(
 	[
 		{bg: '#204a87', fg: '#ffffff'},
 		{bg: '#ffffff', fg: '#204a87'},
-		{bg: '#208733', fg: '#ffffff'},
 		{bg: '#ffffff', fg: '#208733'},
+		{bg: '#208733', fg: '#ffffff'},
 		{bg: '#872046', fg: '#ffffff'},
 		{bg: '#ffffff', fg: '#872046'},
-		{bg: '#f5a70c', fg: '#ffffff'},
 		{bg: '#ffffff', fg: '#f5a70c'},
+		{bg: '#f5a70c', fg: '#ffffff'},
 		{bg: '#0c71f5', fg: '#ffffff'},
 		{bg: '#ffffff', fg: '#0c71f5'}
 	]);
@@ -5314,14 +5314,14 @@ var $author$project$Main$initialModel = $author$project$Main$resetTheme(
 		millis: 0,
 		runner: $author$project$Main$initialRunner,
 		score: 0,
-		startMillis: 0,
 		state: $author$project$Main$Paused,
 		theme: {bg: 'magenta', fg: 'cyan'},
 		themeIndex: 0,
 		themeQueue: _List_Nil,
-		track: $author$project$Main$initialTrack
+		track: $author$project$Main$initialTrack,
+		wallMillis: 0
 	});
-var $author$project$Main$version = 'v0.2.2';
+var $author$project$Main$version = 'v0.2.3';
 var $author$project$Main$init = function (_v0) {
 	return _Utils_Tuple2(
 		$author$project$Main$initialModel,
@@ -6368,6 +6368,10 @@ var $author$project$Main$applySpawnObstacle = F2(
 					});
 			}());
 	});
+var $elm$core$Basics$min = F2(
+	function (x, y) {
+		return (_Utils_cmp(x, y) < 0) ? x : y;
+	});
 var $elm$time$Time$posixToMillis = function (_v0) {
 	var millis = _v0.a;
 	return millis;
@@ -6394,13 +6398,13 @@ var $author$project$Main$setGameState = F2(
 				input: _Utils_update(
 					oldInput,
 					{distance: 0}),
-				startMillis: model.millis,
+				millis: 0,
 				state: state
 			});
 	});
 var $author$project$Main$pausedStep = function (model) {
 	return $author$project$Main$cmdless(
-		($elm$core$Set$isEmpty(model.input.keys) || ((model.millis - model.startMillis) < 1000)) ? model : A2(
+		($elm$core$Set$isEmpty(model.input.keys) || (model.millis < 1000)) ? model : A2(
 			$author$project$Main$setGameState,
 			$author$project$Main$Playing,
 			$author$project$Main$resetTheme(
@@ -6962,15 +6966,17 @@ var $author$project$Main$step = function (model) {
 };
 var $author$project$Main$applyTick = F2(
 	function (posix, model) {
+		var wallMillis = $elm$time$Time$posixToMillis(posix);
 		var oldInput = model.input;
-		var millis = $elm$time$Time$posixToMillis(posix);
+		var dWallMillis = wallMillis - model.wallMillis;
+		var millis = model.millis + A2($elm$core$Basics$min, dWallMillis, 66);
 		var input = _Utils_update(
 			oldInput,
-			{distance: ((millis - model.startMillis) * $author$project$Main$speed) / 1000.0});
+			{distance: (millis * $author$project$Main$speed) / 1000.0});
 		return $author$project$Main$step(
 			_Utils_update(
 				model,
-				{input: input, millis: millis}));
+				{input: input, millis: millis, wallMillis: wallMillis}));
 	});
 var $author$project$Main$applyTouch = F2(
 	function (touch, model0) {
@@ -7220,6 +7226,7 @@ var $author$project$Main$view = function (model) {
 				A2($elm$html$Html$Attributes$style, 'justify-content', 'center'),
 				A2($elm$html$Html$Attributes$style, 'background-color', model.theme.fg),
 				A2($elm$html$Html$Attributes$style, 'color', model.theme.bg),
+				A2($elm$html$Html$Attributes$style, 'transition', '2s background-color, 4s color'),
 				A2($elm$html$Html$Attributes$style, '-webkit-user-select', 'none'),
 				A2($elm$html$Html$Attributes$style, '-moz-user-select', 'none'),
 				A2($elm$html$Html$Attributes$style, '-ms-user-select', 'none'),
@@ -7261,7 +7268,7 @@ var $author$project$Main$view = function (model) {
 					[
 						A2($elm$html$Html$Attributes$style, 'background-color', model.theme.bg),
 						A2($elm$html$Html$Attributes$style, 'position', 'relative'),
-						A2($elm$html$Html$Attributes$style, 'transition', '2s background-color')
+						A2($elm$html$Html$Attributes$style, 'transition', '4s background-color')
 					]),
 				_List_fromArray(
 					[
@@ -7273,7 +7280,8 @@ var $author$project$Main$view = function (model) {
 								$elm$svg$Svg$Attributes$width('100%'),
 								$elm$svg$Svg$Attributes$viewBox(
 								'0 0 ' + ($elm$core$String$fromInt($author$project$Main$canvasWidth) + (' ' + $elm$core$String$fromInt($author$project$Main$canvasHeight)))),
-								$elm$svg$Svg$Attributes$fill(model.theme.fg)
+								$elm$svg$Svg$Attributes$fill(model.theme.fg),
+								A2($elm$html$Html$Attributes$style, 'transition', '2s fill')
 							]),
 						_Utils_eq(model.state, $author$project$Main$Playing) ? $author$project$Main$playingView(model) : _List_Nil),
 						A2(

@@ -20,7 +20,7 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-version = "v0.2.2"
+version = "v0.2.3"
 
 canvasWidth = 30
 canvasHeight = 6
@@ -88,14 +88,17 @@ applyTick : Time.Posix -> Model -> (Model, Cmd Msg)
 applyTick posix model =
   let
     oldInput = model.input
-    millis = posixToMillis posix
+    wallMillis = posixToMillis posix
+    dWallMillis = wallMillis - model.wallMillis
+    millis = model.millis + min dWallMillis 66 -- Throttle below 15 fps.
     input =
       { oldInput
-      | distance = toFloat (millis - model.startMillis) * speed / 1000.0
+      | distance = (toFloat millis) * speed / 1000.0
       }
   in
     { model
-    | millis = millis
+    | wallMillis = wallMillis
+    , millis = millis
     , input = input
     }
     |> step
@@ -153,7 +156,7 @@ setGameState state model =
   let oldInput = model.input in
     { model
     | state = state
-    , startMillis = model.millis
+    , millis = 0
     , input = { oldInput | distance = 0 }
     }
 
@@ -409,12 +412,12 @@ themes : List Theme
 themes =
   [ { bg = "#204a87", fg = "#ffffff" } -- 0
   , { bg = "#ffffff", fg = "#204a87" } -- 400
-  , { bg = "#208733", fg = "#ffffff" } -- 800
-  , { bg = "#ffffff", fg = "#208733" } -- 1200
+  , { bg = "#ffffff", fg = "#208733" } -- 800
+  , { bg = "#208733", fg = "#ffffff" } -- 1200
   , { bg = "#872046", fg = "#ffffff" } -- 1600
   , { bg = "#ffffff", fg = "#872046" } -- 2000
-  , { bg = "#f5a70c", fg = "#ffffff" } -- 2400
-  , { bg = "#ffffff", fg = "#f5a70c" } -- 2800
+  , { bg = "#ffffff", fg = "#f5a70c" } -- 2400
+  , { bg = "#f5a70c", fg = "#ffffff" } -- 2800
   , { bg = "#0c71f5", fg = "#ffffff" } -- 3200
   , { bg = "#ffffff", fg = "#0c71f5" } -- 3600
   ]
@@ -425,8 +428,8 @@ type alias Model =
   , state : GameState
   , runner : Runner
   , track : Track
+  , wallMillis : Int
   , millis : Int
-  , startMillis : Int
   , score : Int
   , highScore : Int
   , themeQueue: List Theme
@@ -445,8 +448,8 @@ initialModel =
     }
   , runner = initialRunner
   , track = initialTrack
+  , wallMillis = 0
   , millis = 0
-  , startMillis = 0
   , score = 0
   , highScore = 0
   , themeQueue = []
@@ -465,7 +468,7 @@ step model =
 {-| Subroutine of `step`, called when the game is in the `Paused` state. -}
 pausedStep : Model -> (Model, Cmd Msg)
 pausedStep model = cmdless <|
-  if Set.isEmpty(model.input.keys) || (model.millis - model.startMillis) < 1000 then
+  if Set.isEmpty(model.input.keys) || model.millis < 1000 then
     model
   else
     { model
@@ -686,6 +689,7 @@ view model =
     , Html.Attributes.style "justify-content" "center"
     , Html.Attributes.style "background-color" model.theme.fg
     , Html.Attributes.style "color" model.theme.bg
+    , Html.Attributes.style "transition" "2s background-color, 4s color"
     , Html.Attributes.style "-webkit-user-select" "none"
     , Html.Attributes.style "-moz-user-select" "none"
     , Html.Attributes.style "-ms-user-select" "none"
@@ -705,7 +709,7 @@ view model =
     , Html.div
         [ Html.Attributes.style "background-color" model.theme.bg
         , Html.Attributes.style "position" "relative"
-        , Html.Attributes.style "transition" "2s background-color"
+        , Html.Attributes.style "transition" "4s background-color"
         ]
         [ svg
             [ Svg.Attributes.display "block"
@@ -717,6 +721,7 @@ view model =
                 ++ (String.fromInt canvasHeight)
                 )
             , Svg.Attributes.fill model.theme.fg
+            , Html.Attributes.style "transition" "2s fill"
             ]
             (if model.state == Playing then playingView model else [])
         , Html.div
