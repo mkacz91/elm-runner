@@ -20,7 +20,7 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-version = "v0.2.2"
+version = "v0.2.3"
 
 canvasWidth = 30
 canvasHeight = 6
@@ -88,14 +88,17 @@ applyTick : Time.Posix -> Model -> (Model, Cmd Msg)
 applyTick posix model =
   let
     oldInput = model.input
-    millis = posixToMillis posix
+    wallMillis = posixToMillis posix
+    dWallMillis = wallMillis - model.wallMillis
+    millis = model.millis + min dWallMillis 66 -- Throttle below 15 fps.
     input =
       { oldInput
-      | distance = toFloat (millis - model.startMillis) * speed / 1000.0
+      | distance = (toFloat millis) * speed / 1000.0
       }
   in
     { model
-    | millis = millis
+    | wallMillis = wallMillis
+    , millis = millis
     , input = input
     }
     |> step
@@ -153,7 +156,7 @@ setGameState state model =
   let oldInput = model.input in
     { model
     | state = state
-    , startMillis = model.millis
+    , millis = 0
     , input = { oldInput | distance = 0 }
     }
 
@@ -425,8 +428,8 @@ type alias Model =
   , state : GameState
   , runner : Runner
   , track : Track
+  , wallMillis : Int
   , millis : Int
-  , startMillis : Int
   , score : Int
   , highScore : Int
   , themeQueue: List Theme
@@ -445,8 +448,8 @@ initialModel =
     }
   , runner = initialRunner
   , track = initialTrack
+  , wallMillis = 0
   , millis = 0
-  , startMillis = 0
   , score = 0
   , highScore = 0
   , themeQueue = []
@@ -465,7 +468,7 @@ step model =
 {-| Subroutine of `step`, called when the game is in the `Paused` state. -}
 pausedStep : Model -> (Model, Cmd Msg)
 pausedStep model = cmdless <|
-  if Set.isEmpty(model.input.keys) || (model.millis - model.startMillis) < 1000 then
+  if Set.isEmpty(model.input.keys) || model.millis < 1000 then
     model
   else
     { model
@@ -485,7 +488,7 @@ playingStep model =
     justLanded = wasJumping && runner.state /= Jumping
     (track, trackCmd) = trackStep model.input model.track
     score = floor model.input.distance
-    shouldActivateNextFrame = justLanded && score // 50 > model.themeIndex
+    shouldActivateNextFrame = justLanded && score // 400 > model.themeIndex
   in
     ( { model
       | runner = runner
