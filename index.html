@@ -32,8 +32,10 @@
 <body>
   <div id="myapp"></div>
   <script>
+    let params = new URLSearchParams(window.location.search);
     var app = Elm.Main.init({
-      node: document.getElementById('myapp')
+      node: document.getElementById('myapp'),
+      flags: { pfpUrl: params.get('pfp') },
     });
 
     var highScoreKey = undefined;
