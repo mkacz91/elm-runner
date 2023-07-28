@@ -20,7 +20,7 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-version = "v0.2.3"
+version = "v0.2.4"
 
 canvasWidth = 30
 canvasHeight = 6
@@ -187,26 +187,31 @@ type alias Runner =
   , w : Float
   , h : Float
   , angle : Float
+  , angleSnapshot : Float
   , dimSnapshot : (Float, Float)
   , snapshotDistance : Float
+  , pfpUrl : Maybe String
   }
 
 {-| Default runner model instance. -}
-initialRunner : Runner
-initialRunner =
+initialRunner : InitFlags -> Runner
+initialRunner flags =
   { state = Running
   , y = 0.0
   , w = 1.0
   , h = 1.0
-  , angle = 0
+  , angle = 0.0
+  , angleSnapshot = 0.0
   , dimSnapshot = (1.0, 1.0)
   , snapshotDistance = 0
+  , pfpUrl = flags.pfpUrl
   }
 
 setRunnerState : Input -> RunnerState -> Runner -> Runner
 setRunnerState input state runner =
   { runner
   | state = state
+  , angleSnapshot = if runner.angle < 360.0 then runner.angle else 0.0
   , dimSnapshot = (runner.w, runner.h)
   , snapshotDistance = input.distance
   }
@@ -239,13 +244,13 @@ jumpStep input runner =
     if d <= ds then
       { runner
       | y = 0
-      , angle = 0
+      , angle = runner.angleSnapshot + 90.0
       }
       |> setRunnerState input Running
     else
       { runner
       | y = a * ds * (d - ds)
-      , angle = ds / d * 90
+      , angle = runner.angleSnapshot + ds / d * 90.0
       }
 
 {-| Animates the change in runner dimenstions. -}
@@ -426,6 +431,7 @@ themes =
 type alias Model =
   { input : Input
   , state : GameState
+  , initialRunner : Runner
   , runner : Runner
   , track : Track
   , wallMillis : Int
@@ -437,26 +443,44 @@ type alias Model =
   , themeIndex: Int
   }
 
-{-| Default application model instance. -}
-initialModel =
-  { state = Paused
-  , input =
-    { jump = False
-    , slide = False
-    , keys = Set.empty
-    , distance = 0
-    }
-  , runner = initialRunner
-  , track = initialTrack
-  , wallMillis = 0
-  , millis = 0
-  , score = 0
-  , highScore = 0
-  , themeQueue = []
-  , theme = { bg = "magenta", fg = "cyan" }
-  , themeIndex = 0
+type alias InitFlags =
+  { pfpUrl : Maybe String
   }
-  |> resetTheme
+
+sanitizePfpUrl : String -> String
+sanitizePfpUrl url =
+  if String.startsWith "data:" url then
+    url
+    |> String.replace "-" "+"
+    |> String.replace "_" "/"
+  else
+    url
+
+{-| Default application model instance. -}
+initialModel : InitFlags -> Model
+initialModel flags =
+  let
+    runner = initialRunner flags
+  in
+    { state = Paused
+    , input =
+      { jump = False
+      , slide = False
+      , keys = Set.empty
+      , distance = 0
+      }
+    , initialRunner = runner
+    , runner = runner
+    , track = initialTrack
+    , wallMillis = 0
+    , millis = 0
+    , score = 0
+    , highScore = 0
+    , themeQueue = []
+    , theme = { bg = "magenta", fg = "cyan" }
+    , themeIndex = 0
+    }
+    |> resetTheme
 
 {-| Advance the game by a single step according to received input. -}
 step : Model -> (Model, Cmd Msg)
@@ -473,7 +497,7 @@ pausedStep model = cmdless <|
   else
     { model
     | track = initialTrack
-    , runner = initialRunner
+    , runner = model.initialRunner
     , score = 0
     }
     |> resetTheme
@@ -548,8 +572,15 @@ activateNextTheme model =
       , themeIndex = model.themeIndex + 1 
       }
 
-init : () -> (Model, Cmd Msg)
-init _ = (initialModel, announceVersion version)
+init : InitFlags -> (Model, Cmd Msg)
+init flags =
+  let
+    sanitizedFlags =
+      { flags
+      | pfpUrl = Maybe.map sanitizePfpUrl flags.pfpUrl
+      }
+  in
+    (initialModel sanitizedFlags, announceVersion version)
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -591,6 +622,14 @@ translate x y
   ++ String.fromFloat y
   ++ ")"
 
+scale : Float -> Float -> String
+scale x y
+  = "scale("
+  ++ String.fromFloat x
+  ++ ","
+  ++ String.fromFloat y
+  ++ ")"
+
 {-| Formats a list of points for an SVG polygon. -}
 points : List (Float, Float) -> String
 points ps =
@@ -601,17 +640,71 @@ points ps =
 runnerView : Runner -> Svg Msg
 runnerView runner =
   Svg.g
-    [ Svg.Attributes.transform (translate runnerX (canvasHeight - runner.y - runner.h / 2))
+    [ Svg.Attributes.transform
+        ( (translate runnerX (canvasHeight - runner.y - runner.h / 2))
+        ++ " " ++ (scale runner.w runner.h)
+        ++ " " ++ (rotate runner.angle)
+        )
     ]
-    [ Svg.rect
-        [ Svg.Attributes.x (String.fromFloat (-runner.w / 2))
-        , Svg.Attributes.y (String.fromFloat (-runner.h / 2))
-        , Svg.Attributes.width (String.fromFloat runner.w)
-        , Svg.Attributes.height (String.fromFloat runner.h)
-        , Svg.Attributes.transform (rotate runner.angle)
-        ]
-        []
-    ]
+    (
+      (
+        case runner.pfpUrl of
+          Nothing -> []
+          Just pfpUrl -> 
+            [ Svg.defs
+              []
+              [ Svg.filter
+                  [ Svg.Attributes.id "pfp"]
+                  [ Svg.feImage
+                      [ Html.Attributes.attribute "href" pfpUrl
+                      , Svg.Attributes.x "-0.5"
+                      , Svg.Attributes.y "-0.5"
+                      , Svg.Attributes.width "1"
+                      , Svg.Attributes.height "1"
+                      , Svg.Attributes.result "r0"
+                      , Svg.Attributes.preserveAspectRatio "none"
+                      ]
+                      []
+                  , Svg.feColorMatrix
+                      [ Svg.Attributes.in_ "SourceGraphic"
+                      , Svg.Attributes.type_ "matrix"
+                      , Svg.Attributes.values (
+                          "0.9 0   0   0   0.1 " ++
+                          "0   0.9 0   0   0.1 " ++
+                          "0   0   0.9 0   0.1 " ++
+                          "0   0   0   1   0")
+                      , Svg.Attributes.result "r1"
+                      ]
+                      []
+                  , Svg.feBlend
+                      [ Svg.Attributes.in_ "r0"
+                      , Svg.Attributes.in2 "r1"
+                      , Svg.Attributes.mode "multiply"
+                      ]
+                      []
+                  ]
+              ]
+            ]
+      )
+      ++
+      [ Svg.rect
+          (
+            [ Svg.Attributes.x "-0.5"
+            , Svg.Attributes.y "-0.5"
+            , Svg.Attributes.width "1"
+            , Svg.Attributes.height "1"
+            , Svg.Attributes.filter "url(#pfp)"
+            ]
+            ++
+            (
+              case runner.pfpUrl of
+                Nothing -> []
+                Just _ -> [ Svg.Attributes.filter "url(#pfp)" ]
+            )
+          )
+          []
+      ]
+    )
 
 {-| Produce an `Svg` representation of an obstacle. -}
 obstacleView : Obstacle -> Svg Msg
@@ -743,7 +836,6 @@ view model =
       ]
 
 {-| The entry point of the application -}
---main = display <~ Window.dimensions ~ foldp step initialModel input
 main = Browser.element
   { init = init
   , view = view
