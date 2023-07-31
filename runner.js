@@ -5355,7 +5355,7 @@ var $author$project$Main$sanitizePfpUrl = function (url) {
 		'/',
 		A3($elm$core$String$replace, '-', '+', url)) : url;
 };
-var $author$project$Main$version = 'v0.2.4';
+var $author$project$Main$version = 'v0.2.5';
 var $author$project$Main$init = function (flags) {
 	var sanitizedFlags = _Utils_update(
 		flags,
@@ -7237,8 +7237,7 @@ var $author$project$Main$runnerView = function (runner) {
 								$elm$svg$Svg$Attributes$x('-0.5'),
 								$elm$svg$Svg$Attributes$y('-0.5'),
 								$elm$svg$Svg$Attributes$width('1'),
-								$elm$svg$Svg$Attributes$height('1'),
-								$elm$svg$Svg$Attributes$filter('url(#pfp)')
+								$elm$svg$Svg$Attributes$height('1')
 							]),
 						function () {
 							var _v1 = runner.pfpUrl;

@@ -20,7 +20,7 @@ import Html.Attributes
 -- behaviour, and, in consequence, the difficulty.
 --------------------------------------------------------------------------------
 
-version = "v0.2.4"
+version = "v0.2.5"
 
 canvasWidth = 30
 canvasHeight = 6
@@ -693,7 +693,6 @@ runnerView runner =
             , Svg.Attributes.y "-0.5"
             , Svg.Attributes.width "1"
             , Svg.Attributes.height "1"
-            , Svg.Attributes.filter "url(#pfp)"
             ]
             ++
             (
